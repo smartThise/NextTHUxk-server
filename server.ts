@@ -604,26 +604,32 @@ const server = http.createServer(async (req, res) => {
         const forceRefresh = parsed.query.refresh === "1";
         let plan: any[], catalog: any[], volData: Record<string, any>;
         let selected: any[], candidates: any[];
+        let qResult: any;
         if (!forceRefresh && s.serverCache.sem === sem && s.serverCache.catalog.length > 0) {
           plan = s.serverCache.plan; catalog = s.serverCache.catalog; volData = s.serverCache.volunteer;
-          [selected, candidates] = await Promise.all([
+          [selected, qResult, candidates] = await Promise.all([
             fetchSelectedCourses(s, sem).catch(e => { console.log(`  [init] selected FAIL: ${e.message}`); return []; }),
+            fetchQueueData(s, sem).catch(e => { console.log(`  [init] queue FAIL: ${e.message}`); return { map: {}, phase: false }; }),
             fetchCandidateCourses(s, sem).catch(e => { console.log(`  [init] candidates FAIL: ${e.message}`); return []; }),
           ]);
         } else {
-          console.log(`  [init] 拉取数据 (4路并发, queue lazy)...`);
+          console.log(`  [init] 拉取全部数据 (6路并发)...`);
           const results = await Promise.all([
             fetchTrainingPlan(s, sem).catch(e => { console.log(`  [init] plan FAIL: ${e.message}`); return []; }),
             fetchCourseCatalog(s, sem).catch(e => { console.log(`  [init] catalog FAIL: ${e.message}`); return []; }),
             fetchVolunteer(s, sem).catch(e => { console.log(`  [init] volunteer FAIL: ${e.message}`); return {}; }),
             fetchSelectedCourses(s, sem).catch(e => { console.log(`  [init] selected FAIL: ${e.message}`); return []; }),
+            fetchQueueData(s, sem).catch(e => { console.log(`  [init] queue FAIL: ${e.message}`); return { map: {}, phase: false }; }),
+            fetchCandidateCourses(s, sem).catch(e => { console.log(`  [init] candidates FAIL: ${e.message}`); return []; }),
           ]);
-          plan = results[0] as any[]; catalog = results[1] as any[]; volData = results[2] as any; selected = results[3] as any[];
-          candidates = await fetchCandidateCourses(s, sem).catch(e => { console.log(`  [init] candidates FAIL: ${e.message}`); return []; });
+          [plan, catalog, volData] = [results[0], results[1], results[2]] as any;
+          selected = results[3] as any[];
+          qResult = results[4] as any;
+          candidates = results[5] as any[];
           s.serverCache = { sem, plan, catalog, volunteer: volData, ts: Date.now() };
         }
-        console.log(`  [init] plan=${plan.length} catalog=${catalog.length} volData=${Object.keys(volData).length} selected=${selected.length} candidates=${candidates.length}`);
-        json(res, s, { plan, catalog, volunteer: volData, selected, queueMap: {}, queuePhase: false, candidates }); return;
+        console.log(`  [init] plan=${plan.length} catalog=${catalog.length} volData=${Object.keys(volData).length} selected=${selected.length} queue=${Object.keys(qResult.map).length} candidates=${candidates.length}`);
+        json(res, s, { plan, catalog, volunteer: volData, selected, queueMap: qResult.map, queuePhase: qResult.phase, candidates }); return;
       }
       if (pathname === "/api/plan") { json(res, s, await fetchTrainingPlan(s, sem)); return; }
       if (pathname === "/api/courses") { json(res, s, s.serverCache.sem === sem ? s.serverCache.catalog : await fetchCourseCatalog(s, sem)); return; }
