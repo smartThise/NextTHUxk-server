@@ -298,7 +298,7 @@ async function fetchPaginated(s: Session, sem: string, path: string, parse: (htm
   } catch { return all; }
 
   // Parallel batches
-  for (let start = 0; start <= 200; start += batchSize) {
+  for (let start = 1; start <= 200; start += batchSize) {
     const batch = await Promise.all(
       Array.from({ length: batchSize }, (_, i) => start + i).map(async p => {
         try {
@@ -346,7 +346,7 @@ async function fetchVolunteer(s: Session, sem: string) {
     const firstSports = await fetchGbk(s, zhjwxkUrl(s, `/${sportsBase}&p_xnxq=${sem}`));
     const sportsMap: Record<string, any> = {};
     Object.assign(sportsMap, parseVolSportsFromHtml(firstSports));
-    for (let start = 0; start <= 20; start += 10) {
+    for (let start = 1; start <= 20; start += 10) {
       const batch = await Promise.all(
         Array.from({ length: 10 }, (_, i) => start + i).map(async p => {
           try {
