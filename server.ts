@@ -62,9 +62,16 @@ async function decodeBody(r: Response, urlHint?: string): Promise<string> {
 async function followChain(urlStr: string, maxHops = 15): Promise<{ finalUrl: string; html: string }> {
     let cur = urlStr, html = "";
     for (let i = 0; i < maxHops; i++) {
+        console.log(`  [followChain] hop=${i} url=${cur}`);
         const r = await fetch(cur, { headers: { "User-Agent": UA, Cookie: ch() }, redirect: "manual" } as RequestInit);
         saveCookies(r);
-        if (r.status === 301 || r.status === 302) { const n = r.headers.get("Location") || ""; cur = n.startsWith("http") ? n : new URL(n, cur).href; continue; }
+        console.log(`  [followChain] hop=${i} status=${r.status} ct=${r.headers.get("content-type")}`);
+        if (r.status === 301 || r.status === 302) {
+            const n = r.headers.get("Location") || "";
+            console.log(`  [followChain] hop=${i} redirect → ${n}`);
+            cur = n.startsWith("http") ? n : new URL(n, cur).href;
+            continue;
+        }
         html = await decodeBody(r, cur); return { finalUrl: cur, html };
     }
     return { finalUrl: cur, html };
@@ -134,9 +141,13 @@ async function finishLogin(loginResp: string) {
     log("CAS 登录成功");
     await followChain(cheerio.load(loginResp)("a").attr()!.href); log("Webvpn session 已建立");
     log("访问选课入口...");
-    const { html: xkHtml } = await followChain(`${ZHJWXK}/xklogin.do`);
+    const xkUrl = `${ZHJWXK}/xklogin.do`;
+    const { finalUrl, html: xkHtml } = await followChain(xkUrl);
+    log(`  DEBUG followChain result: finalUrl=${finalUrl}`);
+    log(`  DEBUG xkHtml length=${xkHtml.length}, preview=${xkHtml.substring(0, 300)}`);
     const sm2Key2 = cheerio.load(xkHtml)("#sm2publicKey").text();
-    if (!sm2Key2) throw new Error("无法获取选课系统 SM2 key");
+    log(`  DEBUG sm2Key2="${sm2Key2}"`);
+    if (!sm2Key2) throw new Error(`无法获取选课系统 SM2 key (finalUrl=${finalUrl}, title="${cheerio.load(xkHtml)("title").text()}", hasLoginForm=${xkHtml.includes("login")})`);
     log("选课系统 CAS 认证...");
     let cr = await postForm(ID_LOGIN, { i_user: storedUserId, i_pass: "04" + sm2.doEncrypt(storedPassword, sm2Key2), fingerPrint: FINGER, fingerGenPrint: "", i_captcha: "" });
     if (cr.includes("二次认证")) { await handle2FAResponse(); return; }
