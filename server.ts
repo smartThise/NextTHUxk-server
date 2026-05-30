@@ -448,6 +448,9 @@ async function proxyRequest(reqPath: string, req: http.IncomingMessage, res: htt
 const LOGIN_HTML = fs.readFileSync(path.join(__dirname, "public", "login.html"), "utf-8");
 const APP_HTML = fs.readFileSync(path.join(__dirname, "public", "app.html"), "utf-8");
 
+// ═══════════════ Server-side cache (catalog/plan/volunteer — 慢数据缓存) ═══════════════
+let serverCache: { sem: string; plan: any[]; catalog: any[]; volunteer: Record<string, any>; ts: number } = { sem: "", plan: [], catalog: [], volunteer: {}, ts: 0 };
+
 function readBody(req: http.IncomingMessage): Promise<string> {
     return new Promise(resolve => { let b = ""; req.on("data", (c: Buffer) => b += c); req.on("end", () => resolve(b)); });
 }
@@ -476,9 +479,34 @@ const server = http.createServer(async (req, res) => {
         if (loginState !== "done") { json(res, { error: "请先登录" }, 401); return; }
         const sem = (parsed.query.sem || "") as string;
         try {
+            // /api/init — 一次返回全部数据（慢数据从缓存读，快数据实时拉）
+            if (pathname === "/api/init") {
+                const forceRefresh = parsed.query.refresh === "1";
+                let plan: any[], catalog: any[], volData: Record<string, any>;
+                if (!forceRefresh && serverCache.sem === sem && serverCache.catalog.length > 0) {
+                    plan = serverCache.plan; catalog = serverCache.catalog; volData = serverCache.volunteer;
+                } else {
+                    console.log(`  [init] 拉取 catalog+plan+volunteer...`);
+                    [plan, catalog, volData] = await Promise.all([
+                        fetchTrainingPlan(sem).catch(() => []),
+                        fetchCourseCatalog(sem).catch(() => []),
+                        fetchVolunteer(sem).catch(() => ({})),
+                    ]);
+                    serverCache = { sem, plan, catalog, volunteer: volData, ts: Date.now() };
+                    console.log(`  [init] 缓存完成: ${catalog.length} 门课程`);
+                }
+                // 快数据实时拉
+                const [selected, qResult, candidates] = await Promise.all([
+                    fetchSelectedCourses(sem).catch(() => []),
+                    fetchQueueData(sem).catch(() => ({ map: {}, phase: false })),
+                    fetchCandidateCourses(sem).catch(() => []),
+                ]);
+                json(res, { plan, catalog, volunteer: volData, selected, queueMap: qResult.map, queuePhase: qResult.phase, candidates });
+                return;
+            }
             if (pathname === "/api/plan") { json(res, await fetchTrainingPlan(sem)); return; }
-            if (pathname === "/api/courses") { json(res, await fetchCourseCatalog(sem)); return; }
-            if (pathname === "/api/volunteer") { json(res, await fetchVolunteer(sem)); return; }
+            if (pathname === "/api/courses") { json(res, serverCache.sem === sem ? serverCache.catalog : await fetchCourseCatalog(sem)); return; }
+            if (pathname === "/api/volunteer") { json(res, serverCache.sem === sem ? serverCache.volunteer : await fetchVolunteer(sem)); return; }
             if (pathname === "/api/selected") { json(res, await fetchSelectedCourses(sem)); return; }
             if (pathname === "/api/queue") { json(res, await fetchQueueData(sem)); return; }
             if (pathname === "/api/candidates") { json(res, await fetchCandidateCourses(sem)); return; }

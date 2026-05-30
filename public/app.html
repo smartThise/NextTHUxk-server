@@ -236,7 +236,7 @@ function askSem(){
 }
 
 // ═══════════════ Launch ═══════════════
-async function launch(){
+async function launch(forceRefresh){
   if(!S.SEM){S.SEM=LS.get('sem')||'';}
   if(!S.SEM){S.SEM=await askSem();}
   if(!S.SEM){$('list').innerHTML='<div class="nx-empty">需要输入学期</div>';return;}
@@ -245,17 +245,11 @@ async function launch(){
   $('list').innerHTML='<div class="nx-empty"><span class="nx-spin"></span>&ensp;正在加载数据…</div>';
   try{
     var t0=Date.now();
-    var sd=LS.get('staticData');
-    var needCatalog=!sd||!sd.catalog||sd.catalog.length<100;
-    var catalog=sd?.catalog||[],plan=sd?.plan||[],volData=sd?.volData||{};
-    if(needCatalog){console.log('[NX] fetching catalog+plan...');var [_p,_c]=await Promise.all([apiFetch('/plan?sem='+S.SEM).catch(function(e){console.warn(e);return[]}),apiFetch('/courses?sem='+S.SEM).catch(function(e){console.warn(e);return[]})]);plan=_p;catalog=_c}
-    // Always refresh volunteer data (time-sensitive)
-    console.log('[NX] fetching volunteer...');volData=await apiFetch('/volunteer?sem='+S.SEM).catch(function(e){console.warn(e);return{}});
-    sd={plan:plan,catalog:catalog,volData:volData,ts:Date.now()};LS.set('staticData',sd);
-    var [sel,qResult]=await Promise.all([apiFetch('/selected?sem='+S.SEM).catch(function(e){console.warn(e);return[]}),apiFetch('/queue?sem='+S.SEM).catch(function(e){return{map:{},phase:false}})]);
-    S.queueDataMap=qResult.map;S.isQueuePhase=qResult.phase;
-    S.candidates=S.isQueuePhase?await apiFetch('/candidates?sem='+S.SEM).catch(function(){return[]}):[];
-    S.planData=plan;
+    // 单次 /api/init 拿全部数据（服务端缓存 catalog/plan/volunteer，秒返回）
+    var d=await apiFetch('/init?sem='+S.SEM+(forceRefresh?'&refresh=1':''));
+    var catalog=d.catalog||[],plan=d.plan||[],volData=d.volunteer||{},sel=d.selected||[];
+    S.queueDataMap=d.queueMap||{};S.isQueuePhase=!!d.queuePhase;
+    S.candidates=d.candidates||[];S.planData=plan;
     // Merge
     var courses=catalog.length?catalog:plan.map(function(c){return Object.assign({},c,{available:true,teacher:'',time:'',capacity:'',selected:false,queue:''})});
     // Merge volunteer
@@ -270,7 +264,8 @@ async function launch(){
     renderCourses(courses);renderPlan(plan);
     renderPreviewTT(courses.filter(function(c){return c.selected}).concat(S.candidates.filter(function(cc){return!courses.some(function(ac){return ac.selected&&ac.code===cc.code})})),'当前已选');
     renderStageCart();renderDrafts();
-    $('cache-info').textContent=(Date.now()-t0)/1000+'s · '+courses.length+'门';
+    var elapsed=((Date.now()-t0)/1000).toFixed(1);
+    $('cache-info').textContent=elapsed+'s · '+courses.length+'门';
     if(S.isQueuePhase){$('phase-tag').style.display='inline';$('phase-tag').textContent='📊 余量模式';$('refresh-queue-btn').style.display='inline-block'}
     // Load AI config
     var cfg=LS.get('config');if(cfg){if(cfg.api)$('ai-api').value=cfg.api;if(cfg.model)$('ai-model').value=cfg.model;if(cfg.token)$('ai-token').value=cfg.token;if(cfg.pref)$('ai-pref').value=cfg.pref}
@@ -542,7 +537,7 @@ $('search-clear').onclick=function(){$('search').value='';filterCourses();$('sea
 ['f-conflict','f-credits','f-day','f-period','f-tongshi','f-feature','f-bksrem','f-yjsrem'].forEach(function(id){$(id).onchange=filterCourses});
 $('modal-close').onclick=function(){$('modal').classList.remove('show')};
 $('modal').onclick=function(e){if(e.target===$('modal'))$('modal').classList.remove('show')};
-$('refresh-btn').onclick=function(){LS.set('staticData',null);launch()};
+$('refresh-btn').onclick=function(){launch(true)};
 $('refresh-queue-btn').onclick=async function(){var q=await apiFetch('/queue?sem='+S.SEM);S.queueDataMap=q.map;S.isQueuePhase=q.phase;S.candidates=await apiFetch('/candidates?sem='+S.SEM).catch(function(){return[]});var ck=new Set(S.candidates.map(function(c){return c.code+'_'+c.seq}));S.allCourses.forEach(function(c){c.isCandidate=ck.has(c.code+'_'+(c.seq||'0'))});filterCourses();toast('队列已刷新 · '+Object.keys(S.queueDataMap).length+'门',true)};
 $('exit-btn').onclick=function(){location.href='/xkBks.vxkBksXkbBs.do?m=main'};
 $('sem-btn').onclick=function(){var s=prompt('学期：',S.SEM);if(s&&s.trim()){S.SEM=s.trim();LS.set('sem',S.SEM);$('sem-btn').textContent=S.SEM;LS.set('staticData',null);launch()}};
