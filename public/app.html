@@ -372,8 +372,37 @@ function filterCourses(){var q=$('search').value.toLowerCase();var f=document.qu
   var br=$('f-bksrem').value;if(br==='>0')list=list.filter(function(c){return(c.remaining||0)>0});
   var yr=$('f-yjsrem').value;if(yr==='>0')list=list.filter(function(c){return(c.gradRemaining||0)>0});
   renderCourses(list)}
-function renderPlanView(q){var el=$('list'),coverage=S.planData.map(function(p){return Object.assign({},p,{covered:S.allCourses.some(function(c){return c.selected&&c.code===p.code})||S.stageCart.some(function(c){return c.code===p.code})});var filtered=coverage;if(q)filtered=filtered.filter(function(p){return p.name.toLowerCase().includes(q)||p.code.includes(q)});var groups={};filtered.forEach(function(p){var g=p.group||p.attr||'其他';if(!groups[g])groups[g]=[];groups[g].push(p)});var totalCr=coverage.reduce(function(s,c){return s+c.credits},0),covCr=coverage.filter(function(c){return c.covered}).reduce(function(s,c){return s+c.credits},0);
-  el.innerHTML='<div style="margin-bottom:14px;padding:12px 16px;border-radius:12px;background:linear-gradient(135deg,rgba(124,106,239,.12),rgba(99,102,241,.06))"><strong>进度</strong>: '+coverage.filter(function(c){return c.covered}).length+'/'+coverage.length+'门 · '+covCr+'/'+totalCr+'学分<div style="margin-top:6px;height:6px;background:rgba(0,0,0,.06);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+(totalCr?Math.round(covCr/totalCr*100):0)+'%;background:#34c759;border-radius:3px"></div></div></div>'+Object.entries(groups).map(function(e){return'<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;padding:5px 12px;background:rgba(124,106,239,.08);border-radius:8px">'+esc(e[0])+'</div>'+e[1].map(function(p){return'<div class="nx-stage-item" style="background:'+(p.covered?'rgba(52,199,89,.06)':'rgba(255,59,48,.04)')+'"><span>'+(p.covered?'✅':'❌')+'</span><span class="nx-stage-name">'+esc(p.name)+'</span><span class="nx-stage-info">'+p.credits+'学分</span><span style="font-size:11px;color:'+(p.covered?'#34c759':'#ff3b30')+'">'+(p.covered?'已满足':'未满足')+'</span></div>'}).join('')+'</div>'}).join('')}
+function renderPlanView(q){
+  var el=$('list');
+  var coverage=S.planData.map(function(p){
+    return Object.assign({},p,{
+      covered:S.allCourses.some(function(c){return c.selected&&c.code===p.code})||S.stageCart.some(function(c){return c.code===p.code})
+    });
+  });
+  var filtered=coverage;
+  if(q)filtered=filtered.filter(function(p){return p.name.toLowerCase().includes(q)||p.code.includes(q)});
+  var groups={};
+  filtered.forEach(function(p){var g=p.group||p.attr||'其他';if(!groups[g])groups[g]=[];groups[g].push(p)});
+  var totalCr=coverage.reduce(function(s,c){return s+c.credits},0);
+  var covCr=coverage.filter(function(c){return c.covered}).reduce(function(s,c){return s+c.credits},0);
+  var covN=coverage.filter(function(c){return c.covered}).length;
+  var pct=totalCr?Math.round(covCr/totalCr*100):0;
+  var h='<div style="margin-bottom:14px;padding:12px 16px;border-radius:12px;background:linear-gradient(135deg,rgba(124,106,239,.12),rgba(99,102,241,.06))">';
+  h+='<strong>进度</strong>: '+covN+'/'+coverage.length+'门 · '+covCr+'/'+totalCr+'学分';
+  h+='<div style="margin-top:6px;height:6px;background:rgba(0,0,0,.06);border-radius:3px;overflow:hidden">';
+  h+='<div style="height:100%;width:'+pct+'%;background:#34c759;border-radius:3px"></div></div></div>';
+  Object.entries(groups).forEach(function(e){
+    h+='<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;padding:5px 12px;background:rgba(124,106,239,.08);border-radius:8px">'+esc(e[0])+'</div>';
+    e[1].forEach(function(p){
+      h+='<div class="nx-stage-item" style="background:'+(p.covered?'rgba(52,199,89,.06)':'rgba(255,59,48,.04)')+'">';
+      h+='<span>'+(p.covered?'✅':'❌')+'</span>';
+      h+='<span class="nx-stage-name">'+esc(p.name)+'</span>';
+      h+='<span class="nx-stage-info">'+p.credits+'学分</span>';
+      h+='<span style="font-size:11px;color:'+(p.covered?'#34c759':'#ff3b30')+'">'+(p.covered?'已满足':'未满足')+'</span></div>';
+    });
+    h+='</div>';
+  });
+  el.innerHTML=h}
 
 // ═══════════════ AI ═══════════════
 $('ai-search-btn').onclick=async function(){
