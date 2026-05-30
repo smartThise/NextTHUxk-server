@@ -1,0 +1,18 @@
+{
+  "name": "nextthuxk-local",
+  "version": "1.0.0",
+  "description": "NextTHUxk 本地独立版 — 不需要浏览器扩展",
+  "private": true,
+  "scripts": {
+    "start": "OPENSSL_CONF=openssl.cnf npx tsx server.ts"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "cross-fetch": "^4.0.0",
+    "iconv-lite": "^0.6.3",
+    "sm-crypto": "^0.3.13"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0"
+  }
+}

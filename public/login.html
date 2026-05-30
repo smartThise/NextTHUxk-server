@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>NextTHUxk - 登录</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;display:flex;align-items:center;justify-content:center}
+.c{background:#fff;border-radius:16px;padding:40px;box-shadow:0 8px 40px rgba(0,0,0,.2);width:400px;text-align:center}
+h1{font-size:22px;font-weight:700;background:linear-gradient(135deg,#7c6aef,#6366f1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+.sub{color:#86868b;font-size:13px;margin-bottom:28px}
+label{display:block;text-align:left;margin-bottom:5px;color:#555;font-size:13px;font-weight:500}
+input{width:100%;padding:11px 14px;border:1.5px solid rgba(0,0,0,.1);border-radius:10px;font-size:15px;margin-bottom:16px;outline:none;transition:border-color .2s;font-family:inherit}
+input:focus{border-color:#7c6aef}
+button{width:100%;padding:12px;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .2s}
+button:hover{opacity:.9}button:disabled{opacity:.5;cursor:not-allowed}
+.login-btn{background:linear-gradient(135deg,#7c6aef,#6366f1);color:#fff;margin-bottom:16px}
+.log{background:#1e1e1e;color:#0f0;padding:14px;border-radius:8px;font-family:'SF Mono',Menlo,monospace;font-size:11px;max-height:240px;overflow-y:auto;display:none;text-align:left}
+.log.on{display:block}.log div{margin-bottom:2px}
+.otp{display:none;margin-top:16px;padding:16px;background:#f8f0ff;border-radius:10px;text-align:left}
+.otp.on{display:block}
+.otp-m{display:flex;gap:6px;margin-bottom:12px}
+.otp-m button{flex:1;padding:8px;font-size:12px;background:#7c6aef;color:#fff;border-radius:8px}
+.otp input{margin-bottom:8px}
+.otp-btn{background:#7c6aef;color:#fff}
+.st{text-align:center;margin-top:14px;font-size:13px;font-weight:600}
+.st.ok{color:#34c759}.st.err{color:#ff3b30}.st.ld{color:#7c6aef}
+</style>
+</head>
+<body>
+<div class="c">
+<h1>✨ NextTHUxk</h1>
+<div class="sub">下一代选课 · 本地独立版</div>
+<form id="f">
+  <label>学号</label>
+  <input type="text" id="uid" placeholder="2025XXXXXXXX" required>
+  <label>密码</label>
+  <input type="password" id="pwd" required>
+  <button type="submit" class="login-btn" id="btn">登录清华账号</button>
+</form>
+<div class="otp" id="otp">
+  <label style="margin-bottom:8px;font-weight:700">二次认证</label>
+  <div class="otp-m" id="otpM"></div>
+  <label>验证码</label>
+  <input type="text" id="otpCode" placeholder="输入验证码">
+  <button type="button" class="otp-btn" id="otpBtn">验证</button>
+</div>
+<div class="st" id="st"></div>
+<div class="log" id="log"></div>
+</div>
+<script>
+var _mi=0;
+function $(i){return document.getElementById(i)}
+function poll(){
+  var t=setInterval(function(){
+    fetch('/api/status').then(function(r){return r.json()}).then(function(d){
+      $('log').innerHTML=d.progress.map(function(l){return '<div>'+l+'</div>'}).join('');
+      $('log').scrollTop=$('log').scrollHeight;
+      if(d.state==='done'){
+        clearInterval(t);$('st').className='st ok';$('st').textContent='✅ 登录成功！';
+        setTimeout(function(){location.href='/app'},400);
+      }else if(d.state==='error'){
+        clearInterval(t);$('st').className='st err';$('st').textContent='❌ '+d.error;$('btn').disabled=false;
+      }else if(d.state==='need_2fa'){
+        clearInterval(t);$('st').className='st ld';$('st').textContent='🔐 需要二次认证';
+        if(d.methods&&d.methods.length>0){$('otp').className='otp on';$('otpM').innerHTML='';
+          d.methods.forEach(function(m,i){var b=document.createElement('button');b.textContent=m;b.type='button';b.onclick=function(){_mi=i;};$('otpM').appendChild(b);});
+        }
+      }
+    }).catch(function(){});
+  },500);
+}
+$('f').onsubmit=function(e){e.preventDefault();var uid=$('uid').value,pwd=$('pwd').value;if(!uid||!pwd)return;
+  $('btn').disabled=true;$('st').className='st ld';$('st').textContent='登录中...';$('log').className='log on';$('otp').className='otp';
+  fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:uid,password:pwd})}).then(function(r){return r.json()}).then(function(){poll()}).catch(function(){$('st').textContent='网络错误';$('btn').disabled=false});return false;};
+$('otpBtn').onclick=function(){$('st').textContent='验证中...';
+  fetch('/api/2fa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({methodIdx:_mi,code:$('otpCode').value})}).then(function(r){return r.json()}).then(function(){$('otp').className='otp';poll()});};
+</script>
+</body>
+</html>
