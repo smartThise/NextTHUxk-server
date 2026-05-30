@@ -25,6 +25,11 @@ function saveCookies(r: Response) {
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 const FINGER = "thu-local-proxy-v1";
 const ZHJWXK = "https://zhjwxk.cic.tsinghua.edu.cn";
+
+let webvpnZhjwxkBase = "";
+function zhjwxkUrl(p: string): string {
+    return webvpnZhjwxkBase ? webvpnZhjwxkBase + p : ZHJWXK + p;
+}
 const ID_LOGIN = "https://id.tsinghua.edu.cn/do/off/ui/auth/login/check";
 const DOUBLE_AUTH = "https://id.tsinghua.edu.cn/b/doubleAuth/login";
 const SAVE_FINGER = "https://id.tsinghua.edu.cn/b/doubleAuth/personal/saveFinger";
@@ -145,7 +150,7 @@ async function finishLogin(loginResp: string) {
     log("CAS 登录成功");
     await followChain(cheerio.load(loginResp)("a").attr()!.href); log("Webvpn session 已建立");
     log("访问选课入口...");
-    const xkUrl = `${ZHJWXK}/xklogin.do`;
+    const xkUrl = zhjwxkUrl(`/xklogin.do`);
     const { finalUrl, html: xkHtml } = await followChain(xkUrl);
     log(`  DEBUG followChain result: finalUrl=${finalUrl}`);
     log(`  DEBUG xkHtml length=${xkHtml.length}, preview=${xkHtml.substring(0, 300)}`);
@@ -157,7 +162,10 @@ async function finishLogin(loginResp: string) {
     if (cr.includes("二次认证")) { await handle2FAResponse(); return; }
     if (!cr.includes("登录成功")) throw new Error("选课系统 CAS 登录失败");
     log("✅ 选课系统登录成功!");
-    await followChain(cheerio.load(cr)("a").attr()!.href); log("选课会话已建立");
+    const { finalUrl: loggedInUrl } = await followChain(cheerio.load(cr)("a").attr()!.href);
+    const wvMatch = loggedInUrl.match(/^(https:\/\/webvpn\.tsinghua\.edu\.cn\/\w+\/[^/]+\/)/);
+    if (wvMatch) { webvpnZhjwxkBase = wvMatch[1]; log("  WebVPN proxy base: " + webvpnZhjwxkBase); }
+    log("选课会话已建立");
     loginState = "done";
 }
 
@@ -227,7 +235,7 @@ function parseVolSportsFromHtml(html: string): Record<string, any> {
 
 // Fetch training plan
 async function fetchTrainingPlan(sem: string) {
-    const html = await fetchGbk(`${ZHJWXK}/jhBks.vjhBksPyfakcbBs.do?m=showBksZxZdxjxjhXmxqkclist&p_xnxq=${sem}`);
+    const html = await fetchGbk(zhjwxkUrl(`/jhBks.vjhBksPyfakcbBs.do?m=showBksZxZdxjxjhXmxqkclist&p_xnxq=${sem}`));
     return parsePlan(cheerio.load(html));
 }
 
@@ -235,7 +243,7 @@ async function fetchTrainingPlan(sem: string) {
 async function fetchCourseCatalog(sem: string) {
     const all: any[] = [];
     for (let p = -1; p <= 200; p++) {
-        const u = p === -1 ? `${ZHJWXK}/xkBks.vxkBksJxjhBs.do?m=kkxxSearch&p_xnxq=${sem}` : `${ZHJWXK}/xkBks.vxkBksJxjhBs.do?m=kkxxSearch&p_xnxq=${sem}&page=${p}`;
+        const u = p === -1 ? zhjwxkUrl(`/xkBks.vxkBksJxjhBs.do?m=kkxxSearch&p_xnxq=${sem}`) : zhjwxkUrl(`/xkBks.vxkBksJxjhBs.do?m=kkxxSearch&p_xnxq=${sem}&page=${p}`);
         try {
             const html = await fetchGbk(u);
             const batch = parseCatalog(cheerio.load(html));
@@ -249,7 +257,7 @@ async function fetchCourseCatalog(sem: string) {
 async function fetchVolunteer(sem: string) {
     const allMap: Record<string, any> = {};
     for (let p = -1; p <= 200; p++) {
-        const u = p === -1 ? `${ZHJWXK}/xkBks.xkBksZytjb.do?m=tbzySearchBR&p_xnxq=${sem}` : `${ZHJWXK}/xkBks.xkBksZytjb.do?m=tbzySearchBR&p_xnxq=${sem}&page=${p}`;
+        const u = p === -1 ? zhjwxkUrl(`/xkBks.xkBksZytjb.do?m=tbzySearchBR&p_xnxq=${sem}`) : zhjwxkUrl(`/xkBks.xkBksZytjb.do?m=tbzySearchBR&p_xnxq=${sem}&page=${p}`);
         const html = await fetchGbk(u);
         const batch = parseVolFromHtml(html); if (!Object.keys(batch).length && p >= 0) break;
         Object.assign(allMap, batch);
@@ -258,7 +266,7 @@ async function fetchVolunteer(sem: string) {
     try {
         const sportsMap: Record<string, any> = {};
         for (let p = -1; p <= 20; p++) {
-            const u = p === -1 ? `${ZHJWXK}/xkBks.xkBksZytjb.do?m=tbzySearchTy&p_xnxq=${sem}` : `${ZHJWXK}/xkBks.xkBksZytjb.do?m=tbzySearchTy&p_xnxq=${sem}&page=${p}`;
+            const u = p === -1 ? zhjwxkUrl(`/xkBks.xkBksZytjb.do?m=tbzySearchTy&p_xnxq=${sem}`) : zhjwxkUrl(`/xkBks.xkBksZytjb.do?m=tbzySearchTy&p_xnxq=${sem}&page=${p}`);
             const html = await fetchGbk(u);
             const batch = parseVolSportsFromHtml(html); if (!Object.keys(batch).length && p >= 0) break;
             Object.assign(sportsMap, batch);
@@ -270,7 +278,7 @@ async function fetchVolunteer(sem: string) {
 
 // Fetch selected courses
 async function fetchSelectedCourses(sem: string) {
-    const html = await fetchGbk(`${ZHJWXK}/xkBks.vxkBksXkbBs.do?m=yxSearchTab&p_xnxq=${sem}&tokenPriFlag=yx&_t=${Date.now()}`);
+    const html = await fetchGbk(zhjwxkUrl(`/xkBks.vxkBksXkbBs.do?m=yxSearchTab&p_xnxq=${sem}&tokenPriFlag=yx&_t=${Date.now()}`));
     const doc = cheerio.load(html);
     // Parse zy map from JS data
     const zyMap: Record<string, any> = {};
@@ -297,7 +305,7 @@ async function fetchSelectedCourses(sem: string) {
 // Fetch queue data
 async function fetchQueueData(sem: string) {
     const map: Record<string, any> = {};
-    const firstHtml = await fetchGbk(`${ZHJWXK}/xkBks.vxkBksXkbBs.do?m=xkqkSearch&p_xnxq=${sem}`);
+    const firstHtml = await fetchGbk(zhjwxkUrl(`/xkBks.vxkBksXkbBs.do?m=xkqkSearch&p_xnxq=${sem}`));
     if (!firstHtml.includes("gridData") || firstHtml.includes("accessDenied")) return { map: {}, phase: false };
     const gridRe = /\[\s*"(\d+)"\s*,\s*"([^"]*?)"\s*,\s*"[^"]*?"\s*,\s*"(\d*)"\s*,\s*"(\d*)"\s*,\s*"[^"]*?"\s*,\s*"[^"]*?"\s*\]/g;
     let gm; while ((gm = gridRe.exec(firstHtml)) !== null) { map[gm[1] + "_" + gm[2]] = { code: gm[1], seq: gm[2], qCapacity: parseInt(gm[3]) || 0, qRemaining: parseInt(gm[4]) || 0, qQueue: 0 }; }
@@ -307,7 +315,7 @@ async function fetchQueueData(sem: string) {
         for (let p = 0; p <= 200; p++) {
             const form = new URLSearchParams({ m: "kylSearch", page: String(p), token, "p_sort.p1": "", "p_sort.p2": "", "p_sort.asc1": "", "p_sort.asc2": "", p_xnxq: sem, pathContent: "" });
             try {
-                const html = await postFormGbk(`${ZHJWXK}/xkBks.vxkBksJxjhBs.do`, Object.fromEntries(form.entries()));
+                const html = await postFormGbk(zhjwxkUrl(`/xkBks.vxkBksJxjhBs.do`), Object.fromEntries(form.entries()));
                 if (!html.includes("gridData")) break;
                 const pgRe = /\[\s*"(\d+)"\s*,\s*"([^"]*?)"\s*,\s*"[^"]*?"\s*,\s*"(\d*)"\s*,\s*"(\d*)"\s*,\s*"[^"]*?"\s*,\s*"[^"]*?"\s*\]/g;
                 let pm; let cnt = 0;
@@ -320,7 +328,7 @@ async function fetchQueueData(sem: string) {
     const parts = Object.values(map).map((q: any) => sem + "_" + q.code + "_" + q.seq);
     for (let i = 0; i < parts.length; i += 100) {
         try {
-            const qHtml = await fetchGbk(`${ZHJWXK}/xkBks.vxkBksXkbBs.do?m=selectBksDlCount&kc_message=${encodeURIComponent(parts.slice(i, i + 100).join(";"))}`);
+            const qHtml = await fetchGbk(zhjwxkUrl(`/xkBks.vxkBksXkbBs.do?m=selectBksDlCount&kc_message=${encodeURIComponent(parts.slice(i, i + 100).join(";"))}`));
             const qData = JSON.parse(qHtml);
             if (Array.isArray(qData)) qData.forEach((obj: any) => { const k = obj.kch + "_" + obj.kxh; if (map[k]) map[k].qQueue = parseInt(obj.dlrs) || 0; });
         } catch { /* ignore */ }
@@ -330,7 +338,7 @@ async function fetchQueueData(sem: string) {
 
 // Fetch candidate courses
 async function fetchCandidateCourses(sem: string) {
-    const html = await fetchGbk(`${ZHJWXK}/xkBks.vxkBksXkbBs.do?m=dlSearch&p_xnxq=${sem}`);
+    const html = await fetchGbk(zhjwxkUrl(`/xkBks.vxkBksXkbBs.do?m=dlSearch&p_xnxq=${sem}`));
     if (html.includes("accessDenied") || !html.includes("trr2")) return [];
     const doc = cheerio.load(html); const candidates: any[] = [];
     doc("tr.trr2").each((_, row) => {
@@ -347,7 +355,7 @@ async function fetchCandidateCourses(sem: string) {
 
 // Fetch course detail
 async function fetchCourseDetail(teacherId: string, code: string) {
-    const html = await fetchGbk(`${ZHJWXK}/js.vjsKcbBs.do?m=showToXs&p_id=${encodeURIComponent(teacherId + ";" + code)}`);
+    const html = await fetchGbk(zhjwxkUrl(`/js.vjsKcbBs.do?m=showToXs&p_id=${encodeURIComponent(teacherId + ";" + code)}`));
     const doc = cheerio.load(html);
     const table = doc("form table table.table-striped").first() || doc("table.table-striped").first();
     if (!table.length) return null;
@@ -365,7 +373,7 @@ async function fetchCourseDetail(teacherId: string, code: string) {
 
 // Fetch level table
 async function fetchLevelTable(sem: string) {
-    const html = await fetchGbk(`${ZHJWXK}/xkBks.vxkBksXkbBs.do?p_xnxq=${sem}&pathContent=${encodeURIComponent("一级课表")}`);
+    const html = await fetchGbk(zhjwxkUrl(`/xkBks.vxkBksXkbBs.do?p_xnxq=${sem}&pathContent=${encodeURIComponent("一级课表")}`));
     const doc = cheerio.load(html); const map: Record<string, any> = {};
     doc("tr.trr2").each((_, row) => {
         const cells: string[] = []; doc(row).find("td").each((_, td) => { cells.push(doc(td).text().trim().replace(/\s+/g, " ")); });
@@ -384,7 +392,7 @@ async function submitCourseApi(sem: string, code: string, seq: string, zy: numbe
     const mSearch = ({ bx: "bxSearch", xx: "xxSearch", rx: "rxSearch", ty: "tySearch" } as any)[flag] || "bxSearch";
     const mVal = ({ bx: "saveBxKc", xx: "saveXxKc", rx: "saveRxKc", ty: "saveTyKc" } as any)[flag] || "saveBxKc";
     const extra = flag === "rx" ? "&is_zyrxk=1" : "";
-    const searchUrl = `${ZHJWXK}/xkBks.vxkBksXkbBs.do?m=${mSearch}&p_xnxq=${sem}&tokenPriFlag=${flag}${extra}`;
+    const searchUrl = zhjwxkUrl(`/xkBks.vxkBksXkbBs.do?m=${mSearch}&p_xnxq=${sem}&tokenPriFlag=${flag}${extra}`);
     // 1) GET search page, extract token
     const searchHtml = await fetchGbk(searchUrl);
     const tokenMatch = searchHtml.match(/name="token"\s+value="([^"]+)"/);
@@ -396,7 +404,7 @@ async function submitCourseApi(sem: string, code: string, seq: string, zy: numbe
     if (flag === "rx") { fields.is_zyrxk = "1"; fields.p_rxklxm = ""; }
     if (flag === "ty") { fields.rxTyType = ""; }
     // 2) POST form
-    const respHtml = await postFormGbk(`${ZHJWXK}/xkBks.vxkBksXkbBs.do`, fields);
+    const respHtml = await postFormGbk(zhjwxkUrl(`/xkBks.vxkBksXkbBs.do`), fields);
     if (respHtml.includes("accessDenied")) return { ok: false, msg: "操作被拒绝" };
     if (respHtml.includes("加入队列成功")) return { ok: true, msg: "已加入候补队列" };
     if (respHtml.includes("选课成功")) return { ok: true, msg: "选课成功" };
@@ -406,7 +414,7 @@ async function submitCourseApi(sem: string, code: string, seq: string, zy: numbe
         const newToken = respHtml.match(/name="token"\s+value="([^"]+)"/);
         const queueFields = { ...fields, m: "saveBksKcDl" };
         if (newToken) queueFields.token = newToken[1];
-        const qHtml = await postFormGbk(`${ZHJWXK}/xkBks.vxkBksXkbBs.do`, queueFields);
+        const qHtml = await postFormGbk(zhjwxkUrl(`/xkBks.vxkBksXkbBs.do`), queueFields);
         if (qHtml.includes("加入队列成功")) return { ok: true, msg: "已加入候补队列" };
         if (qHtml.includes("选课成功")) return { ok: true, msg: "选课成功" };
     }
@@ -416,27 +424,27 @@ async function submitCourseApi(sem: string, code: string, seq: string, zy: numbe
 // Drop course
 async function dropCourseApi(sem: string, code: string, seq: string, isQueue: boolean) {
     if (isQueue) {
-        const searchHtml = await fetchGbk(`${ZHJWXK}/xkBks.vxkBksXkbBs.do?m=dlSearchTab&p_xnxq=${sem}`);
+        const searchHtml = await fetchGbk(zhjwxkUrl(`/xkBks.vxkBksXkbBs.do?m=dlSearchTab&p_xnxq=${sem}`));
         const tokenMatch = searchHtml.match(/name="token"\s+value="([^"]+)"/);
         if (!tokenMatch) return { ok: false, msg: "无法获取 token" };
-        const respHtml = await postFormGbk(`${ZHJWXK}/xkBks.vxkBksXkbBs.do`, { m: "dlDelete", p_xnxq: sem, page: "", token: tokenMatch[1], "p_del_id": sem + ";" + code + ";" + seq + ";" });
+        const respHtml = await postFormGbk(zhjwxkUrl(`/xkBks.vxkBksXkbBs.do`), { m: "dlDelete", p_xnxq: sem, page: "", token: tokenMatch[1], "p_del_id": sem + ";" + code + ";" + seq + ";" });
         if (respHtml.includes("accessDenied")) return { ok: false, msg: "操作被拒绝" };
         return { ok: true, msg: "已退出候补队列" };
     }
-    const searchHtml = await fetchGbk(`${ZHJWXK}/xkBks.vxkBksXkbBs.do?m=yxSearchTab&p_xnxq=${sem}&tokenPriFlag=yx`);
+    const searchHtml = await fetchGbk(zhjwxkUrl(`/xkBks.vxkBksXkbBs.do?m=yxSearchTab&p_xnxq=${sem}&tokenPriFlag=yx`));
     const tokenMatch = searchHtml.match(/name="token"\s+value="([^"]+)"/);
     if (!tokenMatch) return { ok: false, msg: "无法获取 token" };
-    const respHtml = await postFormGbk(`${ZHJWXK}/xkBks.vxkBksXkbBs.do`, { m: "deleteYxk", p_xnxq: sem, page: "", token: tokenMatch[1], tokenPriFlag: "yx", tk: "", jhzy_kch: "", jhzy_kxh: "", jhzy_zy: "", "p_del_id": sem + ";" + code + ";" + seq + ";" });
+    const respHtml = await postFormGbk(zhjwxkUrl(`/xkBks.vxkBksXkbBs.do`), { m: "deleteYxk", p_xnxq: sem, page: "", token: tokenMatch[1], tokenPriFlag: "yx", tk: "", jhzy_kch: "", jhzy_kxh: "", jhzy_zy: "", "p_del_id": sem + ";" + code + ";" + seq + ";" });
     if (respHtml.includes("accessDenied")) return { ok: false, msg: "操作被拒绝" };
     return { ok: true, msg: "退选成功" };
 }
 
 // Change volunteer
 async function changeVolunteerApi(sem: string, code: string, seq: string, targetZy: number) {
-    const searchHtml = await fetchGbk(`${ZHJWXK}/xkBks.vxkBksXkbBs.do?m=yxSearchTab&p_xnxq=${sem}&tokenPriFlag=yx`);
+    const searchHtml = await fetchGbk(zhjwxkUrl(`/xkBks.vxkBksXkbBs.do?m=yxSearchTab&p_xnxq=${sem}&tokenPriFlag=yx`));
     const tokenMatch = searchHtml.match(/name="token"\s+value="([^"]+)"/);
     if (!tokenMatch) return { ok: false, msg: "无法获取 token" };
-    await postFormGbk(`${ZHJWXK}/xkBks.vxkBksXkbBs.do`, { m: "changeZY", p_xnxq: sem, tokenPriFlag: "yx", page: "", token: tokenMatch[1], tk: "", jhzy_kch: code, jhzy_kxh: seq, jhzy_zy: String(targetZy) });
+    await postFormGbk(zhjwxkUrl(`/xkBks.vxkBksXkbBs.do`), { m: "changeZY", p_xnxq: sem, tokenPriFlag: "yx", page: "", token: tokenMatch[1], tk: "", jhzy_kch: code, jhzy_kxh: seq, jhzy_zy: String(targetZy) });
     return { ok: true, msg: "志愿已调整为第" + targetZy + "志愿" };
 }
 
@@ -444,9 +452,9 @@ async function changeVolunteerApi(sem: string, code: string, seq: string, target
 const INJECT_SCRIPT = `<script data-thu-proxy="1">(function(){var Z='http://zhjwxk.cic.tsinghua.edu.cn',ZS='https://zhjwxk.cic.tsinghua.edu.cn';function rw(u){if(typeof u!=='string')return u;if(u.indexOf(ZS)===0)return u.replace(ZS,'');if(u.indexOf(Z)===0)return u.replace(Z,'');return u}var oO=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){return oO.apply(this,[m,rw(u),arguments[2],arguments[3],arguments[4]])};var oF=window.fetch;window.fetch=function(u,o){if(typeof u==='string')u=rw(u);else if(u instanceof Request)u=new Request(rw(u.url),u);return oF.call(this,u,o)};document.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.href){var nh=rw(a.href);if(nh!==a.href){e.preventDefault();window.location.href=nh}}},true)})();</script>`;
 
 async function proxyRequest(reqPath: string, req: http.IncomingMessage, res: http.ServerResponse) {
-    const targetUrl = `${ZHJWXK}${reqPath}${url.parse(req.url || "").search || ""}`;
+    const targetUrl = zhjwxkUrl(`${reqPath}${url.parse(req.url || "").search || ""}`);
     console.log(`  [proxy] ${req.method} ${reqPath}`);
-    const headers: Record<string, string> = { "User-Agent": UA, Cookie: ch(), "Accept": req.headers.accept || "*/*", "Accept-Language": req.headers["accept-language"] || "zh-CN,zh;q=0.9", "Accept-Encoding": "identity", "Referer": `${ZHJWXK}${reqPath}` };
+    const headers: Record<string, string> = { "User-Agent": UA, Cookie: ch(), "Accept": req.headers.accept || "*/*", "Accept-Language": req.headers["accept-language"] || "zh-CN,zh;q=0.9", "Accept-Encoding": "identity", "Referer": zhjwxkUrl(`${reqPath}`) };
     if (req.headers["content-type"]) headers["Content-Type"] = req.headers["content-type"] as string;
     try {
         const body = await new Promise<Buffer>((resolve) => { const chunks: Buffer[] = []; req.on("data", (c: Buffer) => chunks.push(c)); req.on("end", () => resolve(Buffer.concat(chunks))); });
