@@ -462,6 +462,9 @@ const server = http.createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*"); res.setHeader("Access-Control-Allow-Headers", "*"); res.setHeader("Access-Control-Allow-Methods", "*");
     if (req.method === "OPTIONS") { res.writeHead(200); res.end(); return; }
 
+    // Health check (for Render / load balancers)
+    if (pathname === "/health") { res.writeHead(200, { "Content-Type": "text/plain" }); res.end("OK"); return; }
+
     // Pages — 已登录访问 / 自动跳 /app，未登录访问 /app 也允许（前端处理）
     if (pathname === "/" || pathname === "/login") {
         if (loginState === "done") { res.writeHead(302, { Location: "/app" }); res.end(); return; }
@@ -519,10 +522,24 @@ const server = http.createServer(async (req, res) => {
         } catch (e: any) { json(res, { error: e.message }, 500); return; }
     }
 
+    // Static files (CSS, JS, images etc.)
+    if (pathname.match(/\.(css|js|png|jpg|svg|ico|woff2?|ttf|json|txt|map)$/)) {
+        const filePath = path.join(__dirname, "public", pathname);
+        try {
+            const content = fs.readFileSync(filePath);
+            const mime: Record<string, string> = { css: "text/css", js: "application/javascript", png: "image/png", jpg: "image/jpeg", svg: "image/svg+xml", ico: "image/x-icon", woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf", json: "application/json", txt: "text/plain", map: "application/json" };
+            const ext = (pathname.split(".").pop() || "").toLowerCase();
+            res.writeHead(200, { "Content-Type": mime[ext] || "application/octet-stream", "Cache-Control": "public, max-age=3600" });
+            res.end(content); return;
+        } catch { res.writeHead(404); res.end("Not found"); return; }
+    }
+
     // Proxy (require login)
     if (loginState !== "done") { res.writeHead(302, { Location: "/" }); res.end(); return; }
     proxyRequest(pathname, req, res);
 });
 
-const PORT = 3456;
-server.listen(PORT, () => { console.log(`\n🚀 NextTHUxk 本地独立版已启动\n   http://localhost:${PORT}\n`); });
+const PORT = parseInt(process.env.PORT || "3456", 10);
+server.listen(PORT, "0.0.0.0", () => {
+    console.log(`\n🚀 NextTHUxk Server 已启动\n   端口: ${PORT}\n   本地: http://localhost:${PORT}\n`);
+});

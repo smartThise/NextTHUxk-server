@@ -2,79 +2,291 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NextTHUxk - 登录</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;display:flex;align-items:center;justify-content:center}
-.c{background:#fff;border-radius:16px;padding:40px;box-shadow:0 8px 40px rgba(0,0,0,.2);width:400px;text-align:center}
-h1{font-size:22px;font-weight:700;background:linear-gradient(135deg,#7c6aef,#6366f1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
-.sub{color:#86868b;font-size:13px;margin-bottom:28px}
-label{display:block;text-align:left;margin-bottom:5px;color:#555;font-size:13px;font-weight:500}
-input{width:100%;padding:11px 14px;border:1.5px solid rgba(0,0,0,.1);border-radius:10px;font-size:15px;margin-bottom:16px;outline:none;transition:border-color .2s;font-family:inherit}
-input:focus{border-color:#7c6aef}
-button{width:100%;padding:12px;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .2s}
-button:hover{opacity:.9}button:disabled{opacity:.5;cursor:not-allowed}
-.login-btn{background:linear-gradient(135deg,#7c6aef,#6366f1);color:#fff;margin-bottom:16px}
-.log{background:#1e1e1e;color:#0f0;padding:14px;border-radius:8px;font-family:'SF Mono',Menlo,monospace;font-size:11px;max-height:240px;overflow-y:auto;display:none;text-align:left}
-.log.on{display:block}.log div{margin-bottom:2px}
-.otp{display:none;margin-top:16px;padding:16px;background:#f8f0ff;border-radius:10px;text-align:left}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  background:#f0f2f5;
+  min-height:100vh;display:flex;align-items:center;justify-content:center;
+  position:relative;overflow-y:auto;
+}
+/* 背景装饰 */
+body::before{
+  content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;
+  background:radial-gradient(ellipse at 30% 20%, rgba(124,106,239,.12) 0%, transparent 50%),
+             radial-gradient(ellipse at 70% 80%, rgba(99,102,241,.08) 0%, transparent 50%),
+             radial-gradient(ellipse at 50% 50%, rgba(124,106,239,.04) 0%, transparent 60%);
+  z-index:0;pointer-events:none;
+}
+.c{
+  position:relative;z-index:1;
+  background:#fff;border-radius:20px;padding:32px 32px 28px;
+  box-shadow:0 2px 24px rgba(0,0,0,.06),0 8px 64px rgba(0,0,0,.04);
+  width:440px;max-width:96vw;
+  max-height:95vh;overflow-y:auto;
+}
+/* 滚动条美化 */
+.c::-webkit-scrollbar{width:5px}
+.c::-webkit-scrollbar-track{background:transparent}
+.c::-webkit-scrollbar-thumb{background:rgba(0,0,0,.12);border-radius:10px}
+/* Logo */
+.logo-wrap{text-align:center;margin-bottom:32px}
+.logo-icon{font-size:40px;margin-bottom:8px;display:block}
+.logo-title{font-size:22px;font-weight:700;
+  background:linear-gradient(135deg,#7c6aef,#6366f1);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  letter-spacing:-.3px}
+.logo-sub{color:#9ca3af;font-size:13px;margin-top:4px}
+
+/* 表单 */
+.f-group{margin-bottom:18px}
+.f-group label{display:block;margin-bottom:6px;color:#374151;font-size:13px;font-weight:600}
+.f-group input{
+  width:100%;padding:12px 16px;border:1.5px solid #e5e7eb;border-radius:12px;
+  font-size:15px;outline:none;transition:border-color .2s,box-shadow .2s;font-family:inherit;
+  background:#f9fafb;
+}
+.f-group input:focus{border-color:#7c6aef;box-shadow:0 0 0 3px rgba(124,106,239,.1);background:#fff}
+.f-group input::placeholder{color:#d1d5db}
+
+.login-btn{
+  width:100%;padding:13px;border:none;border-radius:12px;
+  font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;
+  background:linear-gradient(135deg,#7c6aef,#6366f1);color:#fff;
+  transition:transform .15s,box-shadow .15s,opacity .2s;
+  box-shadow:0 2px 8px rgba(124,106,239,.25);
+  margin-top:4px;
+}
+.login-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 16px rgba(124,106,239,.35)}
+.login-btn:active:not(:disabled){transform:translateY(0)}
+.login-btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+
+/* 状态提示 */
+.st{
+  text-align:center;margin-top:14px;font-size:13px;font-weight:600;
+  min-height:20px;line-height:20px;
+}
+.st.loading{color:#7c6aef}
+.st.ok{color:#059669}
+.st.err{color:#dc2626}
+
+/* 日志 */
+.log{
+  margin-top:16px;background:#1a1a2e;color:#a7f3d0;padding:12px 16px;
+  border-radius:10px;font-family:'SF Mono','Fira Code',Menlo,monospace;
+  font-size:11px;line-height:1.6;max-height:180px;overflow-y:auto;
+  display:none;
+}
+.log.on{display:block}
+.log div{word-break:break-all}
+.log .ts{color:#6b7280;margin-right:6px}
+
+/* 2FA 区块 */
+.otp{
+  display:none;margin-top:24px;padding:20px;
+  background:#faf5ff;border-radius:14px;
+  border:1px solid rgba(124,106,239,.15);
+  animation:fadeIn .3s;
+}
 .otp.on{display:block}
-.otp-m{display:flex;gap:6px;margin-bottom:12px}
-.otp-m button{flex:1;padding:8px;font-size:12px;background:#7c6aef;color:#fff;border-radius:8px}
-.otp input{margin-bottom:8px}
-.otp-btn{background:#7c6aef;color:#fff}
-.st{text-align:center;margin-top:14px;font-size:13px;font-weight:600}
-.st.ok{color:#34c759}.st.err{color:#ff3b30}.st.ld{color:#7c6aef}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+.otp-title{font-size:14px;font-weight:700;color:#5b21b6;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.otp-desc{font-size:12px;color:#7c3aed;margin-bottom:14px;line-height:1.5}
+
+.otp-methods{display:flex;gap:8px;margin-bottom:16px}
+.otp-method{
+  flex:1;padding:12px 8px;border:2px solid #e9d5ff;border-radius:12px;
+  background:#fff;cursor:pointer;text-align:center;transition:all .2s;font-family:inherit;
+  font-size:13px;font-weight:600;color:#6b21a8;
+}
+.otp-method:hover{border-color:#a78bfa;background:#f5f3ff}
+.otp-method.sel{border-color:#7c6aef;background:rgba(124,106,239,.08);color:#5b21b6;box-shadow:0 0 0 3px rgba(124,106,239,.12)}
+.otp-method-icon{display:block;font-size:22px;margin-bottom:4px}
+
+.otp-code-row{display:flex;gap:8px}
+.otp-code-row input{flex:1}
+.otp-code-row button{
+  padding:0 20px;border:none;border-radius:12px;
+  background:linear-gradient(135deg,#7c6aef,#6366f1);color:#fff;
+  font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;
+  transition:opacity .2s;white-space:nowrap;
+}
+.otp-code-row button:hover:not(:disabled){opacity:.9}
+.otp-code-row button:disabled{opacity:.5;cursor:not-allowed}
+
+/* spinner */
+.spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(124,106,239,.2);border-top-color:#7c6aef;border-radius:50%;animation:sp .6s linear infinite;vertical-align:middle;margin-right:4px}
+@keyframes sp{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
 <div class="c">
-<h1>✨ NextTHUxk</h1>
-<div class="sub">下一代选课 · 本地独立版</div>
-<form id="f">
-  <label>学号</label>
-  <input type="text" id="uid" placeholder="2025XXXXXXXX" required>
-  <label>密码</label>
-  <input type="password" id="pwd" required>
-  <button type="submit" class="login-btn" id="btn">登录清华账号</button>
-</form>
-<div class="otp" id="otp">
-  <label style="margin-bottom:8px;font-weight:700">二次认证</label>
-  <div class="otp-m" id="otpM"></div>
-  <label>验证码</label>
-  <input type="text" id="otpCode" placeholder="输入验证码">
-  <button type="button" class="otp-btn" id="otpBtn">验证</button>
+  <div class="logo-wrap">
+    <span class="logo-icon">✨</span>
+    <div class="logo-title">NextTHUxk</div>
+    <div class="logo-sub">下一代选课 · 本地独立版</div>
+  </div>
+
+  <form id="f">
+    <div class="f-group">
+      <label>📧 学号</label>
+      <input type="text" id="uid" placeholder="2025XXXXXXXX" autocomplete="username" required autofocus>
+    </div>
+    <div class="f-group">
+      <label>🔑 密码</label>
+      <input type="password" id="pwd" placeholder="清华大学 INFO 密码" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="login-btn" id="btn">🔐 登录清华账号</button>
+  </form>
+
+  <div class="st" id="st"></div>
+
+  <div class="otp" id="otp">
+    <div class="otp-title">🔐 二次认证</div>
+    <div class="otp-desc" id="otpDesc">请选择一种验证方式</div>
+    <div class="otp-methods" id="otpM"></div>
+    <div class="otp-code-row">
+      <div class="f-group" style="flex:1;margin-bottom:0">
+        <input type="text" id="otpCode" placeholder="输入验证码" autocomplete="one-time-code">
+      </div>
+      <button id="otpBtn">验证</button>
+    </div>
+  </div>
+
+  <div class="log" id="log"></div>
 </div>
-<div class="st" id="st"></div>
-<div class="log" id="log"></div>
-</div>
+
 <script>
-var _mi=0;
+var _mi=-1;
 function $(i){return document.getElementById(i)}
+
+function addLog(msg){
+  var d=document.createElement('div');
+  d.textContent=msg;
+  $('log').appendChild(d);
+  $('log').scrollTop=$('log').scrollHeight;
+}
+
 function poll(){
   var t=setInterval(function(){
     fetch('/api/status').then(function(r){return r.json()}).then(function(d){
-      $('log').innerHTML=d.progress.map(function(l){return '<div>'+l+'</div>'}).join('');
-      $('log').scrollTop=$('log').scrollHeight;
+      // 追加日志（增量）
+      var curLog=$('log').querySelectorAll('div').length;
+      for(var i=curLog;i<d.progress.length;i++){
+        addLog(d.progress[i]);
+      }
       if(d.state==='done'){
-        clearInterval(t);$('st').className='st ok';$('st').textContent='✅ 登录成功！';
-        setTimeout(function(){location.href='/app'},400);
+        clearInterval(t);
+        $('st').className='st ok';
+        $('st').innerHTML='✅ 登录成功！即将跳转…';
+        $('btn').disabled=false;
+        $('otp').classList.remove('on');
+        setTimeout(function(){location.href='/app'},600);
       }else if(d.state==='error'){
-        clearInterval(t);$('st').className='st err';$('st').textContent='❌ '+d.error;$('btn').disabled=false;
+        clearInterval(t);
+        $('st').className='st err';
+        $('st').textContent='❌ '+d.error;
+        $('btn').disabled=false;
+        $('otp').classList.remove('on');
       }else if(d.state==='need_2fa'){
-        clearInterval(t);$('st').className='st ld';$('st').textContent='🔐 需要二次认证';
-        if(d.methods&&d.methods.length>0){$('otp').className='otp on';$('otpM').innerHTML='';
-          d.methods.forEach(function(m,i){var b=document.createElement('button');b.textContent=m;b.type='button';b.onclick=function(){_mi=i;};$('otpM').appendChild(b);});
+        clearInterval(t);
+        $('st').className='st loading';
+        $('st').innerHTML='<span class="spin"></span> 需要二次认证';
+        if(d.methods&&d.methods.length>0){
+          $('otp').classList.add('on');
+          $('otpM').innerHTML='';
+          _mi=-1;
+          var icons={wechat:'💬',mobile:'📱',totp:'🔢'};
+          d.methods.forEach(function(m,i){
+            var btn=document.createElement('button');
+            btn.className='otp-method';
+            btn.type='button';
+            // 尝试判断类型显示图标
+            var iconKey='';
+            if(m.includes('微信'))iconKey='wechat';
+            else if(m.includes('手机'))iconKey='mobile';
+            else iconKey='totp';
+            btn.innerHTML=(icons[iconKey]||'🔑')+'<br>'+m;
+            btn.onclick=function(){
+              document.querySelectorAll('.otp-method').forEach(function(b){b.classList.remove('sel')});
+              btn.classList.add('sel');
+              _mi=i;
+              $('otpDesc').textContent='已选择「'+m+'」，验证码将发送到您的设备';
+              $('otpCode').focus();
+            };
+            $('otpM').appendChild(btn);
+          });
+          // 如果只有一种方式，自动选中
+          if(d.methods.length===1){
+            $('otpM').querySelector('.otp-method').click();
+          }
         }
+      }else if(d.state==='logging_in'){
+        $('st').className='st loading';
+        $('st').innerHTML='<span class="spin"></span> 登录中…';
       }
     }).catch(function(){});
   },500);
 }
-$('f').onsubmit=function(e){e.preventDefault();var uid=$('uid').value,pwd=$('pwd').value;if(!uid||!pwd)return;
-  $('btn').disabled=true;$('st').className='st ld';$('st').textContent='登录中...';$('log').className='log on';$('otp').className='otp';
-  fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:uid,password:pwd})}).then(function(r){return r.json()}).then(function(){poll()}).catch(function(){$('st').textContent='网络错误';$('btn').disabled=false});return false;};
-$('otpBtn').onclick=function(){$('st').textContent='验证中...';
-  fetch('/api/2fa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({methodIdx:_mi,code:$('otpCode').value})}).then(function(r){return r.json()}).then(function(){$('otp').className='otp';poll()});};
+
+$('f').onsubmit=function(e){
+  e.preventDefault();
+  var uid=$('uid').value.trim(),pwd=$('pwd').value;
+  if(!uid||!pwd)return;
+  $('btn').disabled=true;
+  $('btn').textContent='登录中…';
+  $('st').className='st loading';
+  $('st').innerHTML='<span class="spin"></span> 正在连接认证服务…';
+  $('log').classList.add('on');
+  $('log').innerHTML='';
+  $('otp').classList.remove('on');
+  _mi=-1;$('otpCode').value='';
+
+  fetch('/api/login',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({userId:uid,password:pwd})
+  }).then(function(r){return r.json()}).then(function(){
+    poll();
+  }).catch(function(){
+    $('st').className='st err';
+    $('st').textContent='❌ 网络错误，请检查本地服务器是否运行';
+    $('btn').disabled=false;
+    $('btn').textContent='🔐 登录清华账号';
+  });
+  return false;
+};
+
+$('otpBtn').onclick=function(){
+  if(_mi<0){$('st').className='st err';$('st').textContent='⚠️ 请先选择验证方式';return}
+  var code=$('otpCode').value.trim();
+  if(!code){$('st').className='st err';$('st').textContent='⚠️ 请输入验证码';return}
+  $('st').className='st loading';
+  $('st').innerHTML='<span class="spin"></span> 验证中…';
+  $('otpBtn').disabled=true;
+
+  fetch('/api/2fa',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({methodIdx:_mi,code:code})
+  }).then(function(r){return r.json()}).then(function(){
+    $('otp').classList.remove('on');
+    $('otpBtn').disabled=false;
+    poll();
+  }).catch(function(){
+    $('st').className='st err';
+    $('st').textContent='❌ 验证请求失败';
+    $('otpBtn').disabled=false;
+  });
+};
+
+// 回车提交验证码
+$('otpCode').onkeydown=function(e){
+  if(e.key==='Enter')$('otpBtn').click();
+};
 </script>
 </body>
 </html>
