@@ -569,6 +569,44 @@ function json(res: http.ServerResponse, s: Session, data: any, status = 200) {
   res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(data));
 }
 
+// ═══════════════ Global course cache (catalog/plan/volunteer 公共数据跨 session 共享) ═══════════════
+let courseCache: { sem: string; plan: any[]; catalog: any[]; volunteer: Record<string, any>; ts: number } = { sem: "", plan: [], catalog: [], volunteer: {}, ts: 0 };
+let courseLoading = false;
+
+async function getSharedCourses(s: Session, sem: string, force: boolean) {
+  // volunteer 在 8/12/16/20 点过期
+  const hours = [8, 12, 16, 20];
+  const now = new Date();
+  let cutoff = new Date(now);
+  cutoff.setHours(hours[0], 0, 0, 0);
+  for (let i = hours.length - 1; i >= 0; i--) {
+    const t = new Date(now); t.setHours(hours[i], 0, 0, 0);
+    if (now >= t) { cutoff = t; break; }
+    if (i === 0) { cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - 1); cutoff.setHours(hours[hours.length - 1], 0, 0, 0); }
+  }
+  const volStale = courseCache.ts < cutoff.getTime();
+  if (!force && !volStale && courseCache.sem === sem && courseCache.catalog.length > 0) {
+    return { plan: courseCache.plan, catalog: courseCache.catalog, volData: courseCache.volunteer };
+  }
+  if (courseLoading) {
+    for (let i = 0; i < 60 && courseLoading; i++) await new Promise(r => setTimeout(r, 1000));
+    if (courseCache.sem === sem) return { plan: courseCache.plan, catalog: courseCache.catalog, volData: courseCache.volunteer };
+  }
+  courseLoading = true;
+  try {
+    console.log("  [course-cache] 拉取 catalog+plan+volunteer...");
+    const [plan, catalog, volData] = await Promise.all([
+      fetchTrainingPlan(s, sem).catch(() => []),
+      fetchCourseCatalog(s, sem).catch(() => []),
+      fetchVolunteer(s, sem).catch(() => ({})),
+    ]);
+    courseCache = { sem, plan, catalog, volunteer: volData, ts: Date.now() };
+    console.log(`  [course-cache] 完成: ${catalog.length} 门课程`);
+  } catch (e) { console.log("  [course-cache] 失败:", (e as any)?.message); }
+  finally { courseLoading = false; }
+  return { plan: courseCache.plan, catalog: courseCache.catalog, volData: courseCache.volunteer };
+}
+
 const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url || "/", true);
   const pathname = parsed.pathname || "/";
@@ -602,38 +640,20 @@ const server = http.createServer(async (req, res) => {
     try {
       if (pathname === "/api/init") {
         const forceRefresh = parsed.query.refresh === "1";
-        let plan: any[], catalog: any[], volData: Record<string, any>;
-        let selected: any[], candidates: any[];
-        let qResult: any;
-        if (!forceRefresh && s.serverCache.sem === sem && s.serverCache.catalog.length > 0) {
-          plan = s.serverCache.plan; catalog = s.serverCache.catalog; volData = s.serverCache.volunteer;
-          [selected, qResult, candidates] = await Promise.all([
-            fetchSelectedCourses(s, sem).catch(e => { console.log(`  [init] selected FAIL: ${e.message}`); return []; }),
-            fetchQueueData(s, sem).catch(e => { console.log(`  [init] queue FAIL: ${e.message}`); return { map: {}, phase: false }; }),
-            fetchCandidateCourses(s, sem).catch(e => { console.log(`  [init] candidates FAIL: ${e.message}`); return []; }),
-          ]);
-        } else {
-          console.log(`  [init] 拉取全部数据 (6路并发)...`);
-          const results = await Promise.all([
-            fetchTrainingPlan(s, sem).catch(e => { console.log(`  [init] plan FAIL: ${e.message}`); return []; }),
-            fetchCourseCatalog(s, sem).catch(e => { console.log(`  [init] catalog FAIL: ${e.message}`); return []; }),
-            fetchVolunteer(s, sem).catch(e => { console.log(`  [init] volunteer FAIL: ${e.message}`); return {}; }),
-            fetchSelectedCourses(s, sem).catch(e => { console.log(`  [init] selected FAIL: ${e.message}`); return []; }),
-            fetchQueueData(s, sem).catch(e => { console.log(`  [init] queue FAIL: ${e.message}`); return { map: {}, phase: false }; }),
-            fetchCandidateCourses(s, sem).catch(e => { console.log(`  [init] candidates FAIL: ${e.message}`); return []; }),
-          ]);
-          [plan, catalog, volData] = [results[0], results[1], results[2]] as any;
-          selected = results[3] as any[];
-          qResult = results[4] as any;
-          candidates = results[5] as any[];
-          s.serverCache = { sem, plan, catalog, volunteer: volData, ts: Date.now() };
-        }
-        console.log(`  [init] plan=${plan.length} catalog=${catalog.length} volData=${Object.keys(volData).length} selected=${selected.length} queue=${Object.keys(qResult.map).length} candidates=${candidates.length}`);
-        json(res, s, { plan, catalog, volunteer: volData, selected, queueMap: qResult.map, queuePhase: qResult.phase, candidates }); return;
+        // catalog/plan/volunteer 从全局缓存拿（跨 session 共享）
+        const shared = await getSharedCourses(s, sem, !!forceRefresh);
+        // queue + selected + candidates 每用户独立
+        const [selected, qResult, candidates] = await Promise.all([
+          fetchSelectedCourses(s, sem).catch(e => { console.log(`  [init] selected FAIL: ${e.message}`); return []; }),
+          fetchQueueData(s, sem).catch(e => { console.log(`  [init] queue FAIL: ${e.message}`); return { map: {}, phase: false }; }),
+          fetchCandidateCourses(s, sem).catch(e => { console.log(`  [init] candidates FAIL: ${e.message}`); return []; }),
+        ]);
+        console.log(`  [init] catalog=${shared.catalog.length} selected=${selected.length} queue=${Object.keys(qResult.map).length} candidates=${candidates.length}`);
+        json(res, s, { plan: shared.plan, catalog: shared.catalog, volunteer: shared.volData, selected, queueMap: qResult.map, queuePhase: qResult.phase, candidates }); return;
       }
       if (pathname === "/api/plan") { json(res, s, await fetchTrainingPlan(s, sem)); return; }
-      if (pathname === "/api/courses") { json(res, s, s.serverCache.sem === sem ? s.serverCache.catalog : await fetchCourseCatalog(s, sem)); return; }
-      if (pathname === "/api/volunteer") { json(res, s, s.serverCache.sem === sem ? s.serverCache.volunteer : await fetchVolunteer(s, sem)); return; }
+      if (pathname === "/api/courses") { json(res, s, courseCache.sem === sem ? courseCache.catalog : await fetchCourseCatalog(s, sem)); return; }
+      if (pathname === "/api/volunteer") { json(res, s, courseCache.sem === sem ? courseCache.volunteer : await fetchVolunteer(s, sem)); return; }
       if (pathname === "/api/selected") { json(res, s, await fetchSelectedCourses(s, sem)); return; }
       if (pathname === "/api/queue") { json(res, s, await fetchQueueData(s, sem)); return; }
       if (pathname === "/api/candidates") { json(res, s, await fetchCandidateCourses(s, sem)); return; }
