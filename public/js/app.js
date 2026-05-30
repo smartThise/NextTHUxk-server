@@ -89,15 +89,8 @@
       state.candidateCourses = d.candidates;
       state.planData = plan;
 
-      // 2. Merge static data + dedup by code+seq
-      var merged = NX.mergeStaticData(catalog, volData, plan);
-      var seenCourses = {};
-      state.allCourses = merged.filter(function (c) {
-        var key = c.code + '_' + (c.seq || '0');
-        if (seenCourses[key]) return false;
-        seenCourses[key] = true;
-        return true;
-      });
+      // 2. Merge static data
+      state.allCourses = NX.mergeStaticData(catalog, volData, plan);
 
       // 3. Mark candidate courses
       if (state.candidateCourses.length) {
