@@ -133,7 +133,33 @@
       NX.renderStageCart();
       NX.renderDrafts();
 
-      // 7. Cache info
+      // 7. Lazy load queue data after UI renders
+      setTimeout(async function () {
+        try {
+          var q = await NX.fetchQueue(NX.state.SEM);
+          NX.state.queueDataMap = q.map;
+          NX.state.isQueuePhase = q.phase;
+          if (q.phase) {
+            NX.state.candidateCourses = await NX.fetchCandidates(NX.state.SEM);
+            var candCodes = new Set(NX.state.candidateCourses.map(function (c) { return c.code; }));
+            NX.state.allCourses.forEach(function (c) { c.isCandidate = candCodes.has(c.code); });
+          }
+          NX.filterCourses();
+          NX.renderPreviewTT(
+            NX.state.allCourses.filter(function (c) { return c.selected; }).concat(
+              NX.state.candidateCourses.filter(function (cc) { return !NX.state.allCourses.some(function (ac) { return ac.selected && ac.code === cc.code; }); })
+            ),
+            '当前已选'
+          );
+          var phaseTag = document.getElementById('phase-tag');
+          if (phaseTag && NX.state.isQueuePhase) { phaseTag.style.display = 'inline'; phaseTag.textContent = '📊 课余量模式'; }
+          var qBtn = document.getElementById('refresh-queue-btn');
+          if (qBtn) qBtn.style.display = (NX.state.isQueuePhase || NX.state.candidateCourses.length) ? 'inline-block' : 'none';
+          console.log('[NextTHUxk] queue lazy-loaded:', Object.keys(q.map).length, 'courses');
+        } catch (e) { /* queue not critical */ }
+      }, 500);
+
+      // 8. Cache info
       var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
       var cacheEl = document.getElementById('cache-info');
       if (cacheEl) {
