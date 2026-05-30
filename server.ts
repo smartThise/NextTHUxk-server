@@ -24,7 +24,7 @@ function saveCookies(r: Response) {
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 const FINGER = "thu-local-proxy-v1";
-const ZHJWXK = "http://zhjwxk.cic.tsinghua.edu.cn";
+const ZHJWXK = "https://zhjwxk.cic.tsinghua.edu.cn";
 const ID_LOGIN = "https://id.tsinghua.edu.cn/do/off/ui/auth/login/check";
 const DOUBLE_AUTH = "https://id.tsinghua.edu.cn/b/doubleAuth/login";
 const SAVE_FINGER = "https://id.tsinghua.edu.cn/b/doubleAuth/personal/saveFinger";
@@ -66,7 +66,7 @@ async function followChain(urlStr: string, maxHops = 15): Promise<{ finalUrl: st
         const r = await fetch(cur, { headers: { "User-Agent": UA, Cookie: ch() }, redirect: "manual" } as RequestInit);
         saveCookies(r);
         console.log(`  [followChain] hop=${i} status=${r.status} ct=${r.headers.get("content-type")}`);
-        if (r.status === 301 || r.status === 302) {
+        if (r.status === 301 || r.status === 302 || r.status === 307 || r.status === 308) {
             const n = r.headers.get("Location") || "";
             console.log(`  [followChain] hop=${i} redirect → ${n}`);
             cur = n.startsWith("http") ? n : new URL(n, cur).href;
@@ -437,7 +437,7 @@ async function changeVolunteerApi(sem: string, code: string, seq: string, target
 }
 
 // ═══════════════ Proxy ═══════════════
-const INJECT_SCRIPT = `<script data-thu-proxy="1">(function(){var Z='http://zhjwxk.cic.tsinghua.edu.cn',ZS='https://zhjwxk.cic.tsinghua.edu.cn';function rw(u){if(typeof u!=='string')return u;if(u.indexOf(Z)===0)return u.replace(Z,'');if(u.indexOf(ZS)===0)return u.replace(ZS,'');return u}var oO=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){return oO.apply(this,[m,rw(u),arguments[2],arguments[3],arguments[4]])};var oF=window.fetch;window.fetch=function(u,o){if(typeof u==='string')u=rw(u);else if(u instanceof Request)u=new Request(rw(u.url),u);return oF.call(this,u,o)};document.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.href){var nh=rw(a.href);if(nh!==a.href){e.preventDefault();window.location.href=nh}}},true)})();</script>`;
+const INJECT_SCRIPT = `<script data-thu-proxy="1">(function(){var Z='http://zhjwxk.cic.tsinghua.edu.cn',ZS='https://zhjwxk.cic.tsinghua.edu.cn';function rw(u){if(typeof u!=='string')return u;if(u.indexOf(ZS)===0)return u.replace(ZS,'');if(u.indexOf(Z)===0)return u.replace(Z,'');return u}var oO=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){return oO.apply(this,[m,rw(u),arguments[2],arguments[3],arguments[4]])};var oF=window.fetch;window.fetch=function(u,o){if(typeof u==='string')u=rw(u);else if(u instanceof Request)u=new Request(rw(u.url),u);return oF.call(this,u,o)};document.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.href){var nh=rw(a.href);if(nh!==a.href){e.preventDefault();window.location.href=nh}}},true)})();</script>`;
 
 async function proxyRequest(reqPath: string, req: http.IncomingMessage, res: http.ServerResponse) {
     const targetUrl = `${ZHJWXK}${reqPath}${url.parse(req.url || "").search || ""}`;
@@ -448,7 +448,7 @@ async function proxyRequest(reqPath: string, req: http.IncomingMessage, res: htt
         const body = await new Promise<Buffer>((resolve) => { const chunks: Buffer[] = []; req.on("data", (c: Buffer) => chunks.push(c)); req.on("end", () => resolve(Buffer.concat(chunks))); });
         const r = await fetch(targetUrl, { method: req.method || "GET", headers, body: body.length > 0 ? body : undefined, redirect: "manual" } as RequestInit);
         saveCookies(r);
-        if (r.status === 301 || r.status === 302) {
+        if (r.status === 301 || r.status === 302 || r.status === 307 || r.status === 308) {
             const loc = r.headers.get("Location") || ""; let rp = loc;
             if (loc.includes("zhjwxk.cic.tsinghua.edu.cn")) rp = loc.replace(/^https?:\/\/zhjwxk\.cic\.tsinghua\.edu\.cn/, "");
             else if (loc.startsWith("http")) { res.writeHead(302, { Location: loc }); res.end(); return; }
