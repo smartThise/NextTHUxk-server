@@ -149,28 +149,7 @@
       var qRefreshBtn = document.getElementById('refresh-queue-btn');
       if (qRefreshBtn) qRefreshBtn.style.display = (state.isQueuePhase || state.candidateCourses.length) ? 'inline-block' : 'none';
 
-      // 9. Lazy load queue data (实时,不缓存,后台拉取)
-      setTimeout(async function () {
-          try {
-            var t1 = Date.now();
-            var q = await NX.fetchQueue(state.SEM);
-            state.queueDataMap = q.map;
-            state.isQueuePhase = q.phase;
-            if (q.phase && !state.candidateCourses.length) {
-              state.candidateCourses = await NX.fetchCandidates(state.SEM);
-              var cc = new Set(state.candidateCourses.map(function (c) { return c.code; }));
-              state.allCourses.forEach(function (c) { c.isCandidate = cc.has(c.code); });
-            }
-            NX.filterCourses();
-            var phaseTag2 = document.getElementById('phase-tag');
-            if (phaseTag2 && state.isQueuePhase) { phaseTag2.style.display = 'inline'; phaseTag2.textContent = '📊 课余量模式'; }
-            var qBtn2 = document.getElementById('refresh-queue-btn');
-            if (qBtn2) qBtn2.style.display = (state.isQueuePhase || state.candidateCourses.length) ? 'inline-block' : 'none';
-            console.log('[NextTHUxk] queue loaded in', ((Date.now() - t1) / 1000).toFixed(1) + 's,', Object.keys(q.map).length, 'courses');
-          } catch (e) { /* queue not critical */ }
-        }, 300);
-
-      // 10. Load AI config
+      // 9. Load AI config
       var cfg = NX.store.get('config');
       if (cfg) {
         if (cfg.api) document.getElementById('ai-api').value = cfg.api;
