@@ -395,25 +395,37 @@ async function fetchQueueData(s: Session, sem: string) {
   const tokenMatch = /name="token"\s+value="([^"]+)"/.exec(firstHtml);
   const token = tokenMatch ? tokenMatch[1] : "";
   if (token) {
-    for (let p = 0; p <= 200; p++) {
-      const form = new URLSearchParams({ m: "kylSearch", page: String(p), token, "p_sort.p1": "", "p_sort.p2": "", "p_sort.asc1": "", "p_sort.asc2": "", p_xnxq: sem, pathContent: "" });
-      try {
-        const html = await postFormGbk(s, zhjwxkUrl(s, "/xkBks.vxkBksJxjhBs.do"), Object.fromEntries(form.entries()));
-        if (!html.includes("gridData")) break;
-        const pgRe = /\[\s*"(\d+)"\s*,\s*"([^"]*?)"\s*,\s*"[^"]*?"\s*,\s*"(\d*)"\s*,\s*"(\d*)"\s*,\s*"[^"]*?"\s*,\s*"[^"]*?"\s*\]/g;
-        let pm; let cnt = 0;
-        while ((pm = pgRe.exec(html)) !== null) { const k = pm[1] + "_" + pm[2]; if (!map[k]) map[k] = { code: pm[1], seq: pm[2], qCapacity: parseInt(pm[3]) || 0, qRemaining: parseInt(pm[4]) || 0, qQueue: 0 }; cnt++; }
-        if (!cnt) break;
-      } catch { break; }
+    for (let start = 0; start <= 200; start += 10) {
+      const batch = await Promise.all(
+        Array.from({ length: 10 }, (_, i) => start + i).map(async p => {
+          const form = new URLSearchParams({ m: "kylSearch", page: String(p), token, "p_sort.p1": "", "p_sort.p2": "", "p_sort.asc1": "", "p_sort.asc2": "", p_xnxq: sem, pathContent: "" });
+          try {
+            const html = await postFormGbk(s, zhjwxkUrl(s, "/xkBks.vxkBksJxjhBs.do"), Object.fromEntries(form.entries()));
+            if (!html.includes("gridData")) return [];
+            const pgRe = /\[\s*"(\d+)"\s*,\s*"([^"]*?)"\s*,\s*"[^"]*?"\s*,\s*"(\d*)"\s*,\s*"(\d*)"\s*,\s*"[^"]*?"\s*,\s*"[^"]*?"\s*\]/g;
+            const items: any[] = []; let pm;
+            while ((pm = pgRe.exec(html)) !== null) items.push({ k: pm[1] + "_" + pm[2], code: pm[1], seq: pm[2], qCapacity: parseInt(pm[3]) || 0, qRemaining: parseInt(pm[4]) || 0, qQueue: 0 });
+            return items;
+          } catch { return []; }
+        })
+      );
+      let total = 0;
+      for (const items of batch) { for (const it of items) { if (!map[it.k]) map[it.k] = { code: it.code, seq: it.seq, qCapacity: it.qCapacity, qRemaining: it.qRemaining, qQueue: 0 }; total++; } }
+      if (total === 0) break;
     }
   }
   const parts = Object.values(map).map((q: any) => sem + "_" + q.code + "_" + q.seq);
-  for (let i = 0; i < parts.length; i += 100) {
-    try {
-      const qHtml = await fetchGbk(s, zhjwxkUrl(s, `/xkBks.vxkBksXkbBs.do?m=selectBksDlCount&kc_message=${encodeURIComponent(parts.slice(i, i + 100).join(";"))}`));
-      const qData = JSON.parse(qHtml);
-      if (Array.isArray(qData)) qData.forEach((obj: any) => { const k = obj.kch + "_" + obj.kxh; if (map[k]) map[k].qQueue = parseInt(obj.dlrs) || 0; });
-    } catch { /* ignore */ }
+  for (let i = 0; i < parts.length; i += 500) {
+    const batch = parts.slice(i, i + 500);
+    const subBatches: string[][] = [];
+    for (let j = 0; j < batch.length; j += 100) subBatches.push(batch.slice(j, j + 100));
+    await Promise.all(subBatches.map(async sub => {
+      try {
+        const qHtml = await fetchGbk(s, zhjwxkUrl(s, `/xkBks.vxkBksXkbBs.do?m=selectBksDlCount&kc_message=${encodeURIComponent(sub.join(";"))}`));
+        const qData = JSON.parse(qHtml);
+        if (Array.isArray(qData)) qData.forEach((obj: any) => { const k = obj.kch + "_" + obj.kxh; if (map[k]) map[k].qQueue = parseInt(obj.dlrs) || 0; });
+      } catch { /* ignore */ }
+    }));
   }
   return { map, phase: !!Object.keys(map).length };
 }
@@ -591,24 +603,32 @@ const server = http.createServer(async (req, res) => {
       if (pathname === "/api/init") {
         const forceRefresh = parsed.query.refresh === "1";
         let plan: any[], catalog: any[], volData: Record<string, any>;
+        let selected: any[], candidates: any[];
+        let qResult: any;
         if (!forceRefresh && s.serverCache.sem === sem && s.serverCache.catalog.length > 0) {
           plan = s.serverCache.plan; catalog = s.serverCache.catalog; volData = s.serverCache.volunteer;
+          [selected, qResult, candidates] = await Promise.all([
+            fetchSelectedCourses(s, sem).catch(e => { console.log(`  [init] selected FAIL: ${e.message}`); return []; }),
+            fetchQueueData(s, sem).catch(e => { console.log(`  [init] queue FAIL: ${e.message}`); return { map: {}, phase: false }; }),
+            fetchCandidateCourses(s, sem).catch(e => { console.log(`  [init] candidates FAIL: ${e.message}`); return []; }),
+          ]);
         } else {
-          console.log(`  [init] 拉取 catalog+plan+volunteer...`);
-          [plan, catalog, volData] = await Promise.all([
+          console.log(`  [init] 拉取全部数据 (6路并发)...`);
+          const results = await Promise.all([
             fetchTrainingPlan(s, sem).catch(e => { console.log(`  [init] plan FAIL: ${e.message}`); return []; }),
             fetchCourseCatalog(s, sem).catch(e => { console.log(`  [init] catalog FAIL: ${e.message}`); return []; }),
             fetchVolunteer(s, sem).catch(e => { console.log(`  [init] volunteer FAIL: ${e.message}`); return {}; }),
+            fetchSelectedCourses(s, sem).catch(e => { console.log(`  [init] selected FAIL: ${e.message}`); return []; }),
+            fetchQueueData(s, sem).catch(e => { console.log(`  [init] queue FAIL: ${e.message}`); return { map: {}, phase: false }; }),
+            fetchCandidateCourses(s, sem).catch(e => { console.log(`  [init] candidates FAIL: ${e.message}`); return []; }),
           ]);
-          console.log(`  [init] 结果: plan=${plan.length}, catalog=${catalog.length}, volData=${Object.keys(volData).length}`);
+          [plan, catalog, volData] = [results[0], results[1], results[2]] as any;
+          selected = results[3] as any[];
+          qResult = results[4] as any;
+          candidates = results[5] as any[];
           s.serverCache = { sem, plan, catalog, volunteer: volData, ts: Date.now() };
         }
-        const [selected, qResult, candidates] = await Promise.all([
-          fetchSelectedCourses(s, sem).catch(e => { console.log(`  [init] selected FAIL: ${e.message}`); return []; }),
-          fetchQueueData(s, sem).catch(e => { console.log(`  [init] queue FAIL: ${e.message}`); return { map: {}, phase: false }; }),
-          fetchCandidateCourses(s, sem).catch(e => { console.log(`  [init] candidates FAIL: ${e.message}`); return []; }),
-        ]);
-        console.log(`  [init] 快数据: selected=${selected.length}, queue=${Object.keys(qResult.map).length}, candidates=${candidates.length}`);
+        console.log(`  [init] plan=${plan.length} catalog=${catalog.length} volData=${Object.keys(volData).length} selected=${selected.length} queue=${Object.keys(qResult.map).length} candidates=${candidates.length}`);
         json(res, s, { plan, catalog, volunteer: volData, selected, queueMap: qResult.map, queuePhase: qResult.phase, candidates }); return;
       }
       if (pathname === "/api/plan") { json(res, s, await fetchTrainingPlan(s, sem)); return; }
