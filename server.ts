@@ -24,7 +24,7 @@ function saveCookies(r: Response) {
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 const FINGER = "thu-local-proxy-v1";
-const ZHJWXK = "https://webvpn.tsinghua.edu.cn/http/zhjwxk.cic.tsinghua.edu.cn";
+const ZHJWXK = "http://zhjwxk.cic.tsinghua.edu.cn";
 const ID_LOGIN = "https://id.tsinghua.edu.cn/do/off/ui/auth/login/check";
 const DOUBLE_AUTH = "https://id.tsinghua.edu.cn/b/doubleAuth/login";
 const SAVE_FINGER = "https://id.tsinghua.edu.cn/b/doubleAuth/personal/saveFinger";
@@ -34,20 +34,30 @@ async function fetchAuto(urlStr: string): Promise<string> {
     const r = await fetch(urlStr, { headers: { "User-Agent": UA, Cookie: ch() } });
     saveCookies(r);
     if (r.status !== 200 && r.status !== 201) throw new Error(`GET ${urlStr} → ${r.status}`);
-    return decodeBody(r);
+    return decodeBody(r, urlStr);
 }
 async function postForm(urlStr: string, form: Record<string, string>): Promise<string> {
     const body = Object.entries(form).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
     const r = await fetch(urlStr, { method: "POST", headers: { "User-Agent": UA, Cookie: ch(), "Content-Type": "application/x-www-form-urlencoded" }, body });
     saveCookies(r);
     if (r.status !== 200 && r.status !== 201) throw new Error(`POST ${urlStr} → ${r.status}`);
-    return decodeBody(r);
+    return decodeBody(r, urlStr);
 }
-async function decodeBody(r: Response): Promise<string> {
+async function decodeBody(r: Response, urlHint?: string): Promise<string> {
     const buf = Buffer.from(await r.arrayBuffer());
-    const ct = r.headers.get("content-type") || "";
-    const cs = /charset=([^;]+)/i.exec(ct)?.[1]?.trim() || "";
-    return (cs.toLowerCase() === "gbk" || cs.toLowerCase() === "gb2312") ? iconv.decode(buf, "gbk") : buf.toString("utf-8");
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
+    // 1) HTTP header charset
+    if (ct.includes("gbk") || ct.includes("gb2312")) return iconv.decode(buf, "gbk");
+    // 2) Check meta tag in HTML
+    const rawStr = buf.toString("utf-8");
+    if (rawStr.includes("charset=GBK") || rawStr.includes("charset=gb2312") || rawStr.includes('charset="GBK"')) {
+        return iconv.decode(buf, "gbk");
+    }
+    // 3) URL-based fallback: zhjwxk pages are always GBK
+    if (urlHint && /zhjw|xkBks|jhBks|vjsKcbBs/.test(urlHint)) {
+        return iconv.decode(buf, "gbk");
+    }
+    return rawStr;
 }
 async function followChain(urlStr: string, maxHops = 15): Promise<{ finalUrl: string; html: string }> {
     let cur = urlStr, html = "";
@@ -55,7 +65,7 @@ async function followChain(urlStr: string, maxHops = 15): Promise<{ finalUrl: st
         const r = await fetch(cur, { headers: { "User-Agent": UA, Cookie: ch() }, redirect: "manual" } as RequestInit);
         saveCookies(r);
         if (r.status === 301 || r.status === 302) { const n = r.headers.get("Location") || ""; cur = n.startsWith("http") ? n : new URL(n, cur).href; continue; }
-        html = await decodeBody(r); return { finalUrl: cur, html };
+        html = await decodeBody(r, cur); return { finalUrl: cur, html };
     }
     return { finalUrl: cur, html };
 }
@@ -416,7 +426,7 @@ async function changeVolunteerApi(sem: string, code: string, seq: string, target
 }
 
 // ═══════════════ Proxy ═══════════════
-const INJECT_SCRIPT = `<script data-thu-proxy="1">(function(){var Z='http://zhjwxk.cic.tsinghua.edu.cn',ZS='https://zhjwxk.cic.tsinghua.edu.cn',ZV='https://webvpn.tsinghua.edu.cn/http/zhjwxk.cic.tsinghua.edu.cn';function rw(u){if(typeof u!=='string')return u;if(u.indexOf(ZV)===0)return u.replace(ZV,'');if(u.indexOf(ZS)===0)return u.replace(ZS,'');if(u.indexOf(Z)===0)return u.replace(Z,'');return u}var oO=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){return oO.apply(this,[m,rw(u),arguments[2],arguments[3],arguments[4]])};var oF=window.fetch;window.fetch=function(u,o){if(typeof u==='string')u=rw(u);else if(u instanceof Request)u=new Request(rw(u.url),u);return oF.call(this,u,o)};document.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.href){var nh=rw(a.href);if(nh!==a.href){e.preventDefault();window.location.href=nh}}},true)})();</script>`;
+const INJECT_SCRIPT = `<script data-thu-proxy="1">(function(){var Z='http://zhjwxk.cic.tsinghua.edu.cn',ZS='https://zhjwxk.cic.tsinghua.edu.cn';function rw(u){if(typeof u!=='string')return u;if(u.indexOf(Z)===0)return u.replace(Z,'');if(u.indexOf(ZS)===0)return u.replace(ZS,'');return u}var oO=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){return oO.apply(this,[m,rw(u),arguments[2],arguments[3],arguments[4]])};var oF=window.fetch;window.fetch=function(u,o){if(typeof u==='string')u=rw(u);else if(u instanceof Request)u=new Request(rw(u.url),u);return oF.call(this,u,o)};document.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.href){var nh=rw(a.href);if(nh!==a.href){e.preventDefault();window.location.href=nh}}},true)})();</script>`;
 
 async function proxyRequest(reqPath: string, req: http.IncomingMessage, res: http.ServerResponse) {
     const targetUrl = `${ZHJWXK}${reqPath}${url.parse(req.url || "").search || ""}`;
@@ -429,18 +439,13 @@ async function proxyRequest(reqPath: string, req: http.IncomingMessage, res: htt
         saveCookies(r);
         if (r.status === 301 || r.status === 302) {
             const loc = r.headers.get("Location") || ""; let rp = loc;
-            if (loc.includes("zhjwxk.cic.tsinghua.edu.cn")) {
-                rp = loc.replace(/https?:\/\/zhjwxk\.cic\.tsinghua\.edu\.cn/, "")
-                       .replace(/https:\/\/webvpn\.tsinghua\.edu\.cn\/http\/zhjwxk\.cic\.tsinghua\.edu\.cn/, "");
-            }
+            if (loc.includes("zhjwxk.cic.tsinghua.edu.cn")) rp = loc.replace(/^https?:\/\/zhjwxk\.cic\.tsinghua\.edu\.cn/, "");
             else if (loc.startsWith("http")) { res.writeHead(302, { Location: loc }); res.end(); return; }
             res.writeHead(302, { Location: rp }); res.end(); return;
         }
         const buf = Buffer.from(await r.arrayBuffer()); const upstreamCT = r.headers.get("content-type") || "";
         if (upstreamCT.includes("text/html")) {
-            let html = iconv.decode(buf, "gbk")
-                .replace(/https?:\/\/zhjwxk\.cic\.tsinghua\.edu\.cn/g, "")
-                .replace(/https:\/\/webvpn\.tsinghua\.edu\.cn\/http\/zhjwxk\.cic\.tsinghua\.edu\.cn/g, "");
+            let html = iconv.decode(buf, "gbk").replace(/https?:\/\/zhjwxk\.cic\.tsinghua\.edu\.cn/g, "");
             const hi = html.indexOf("<head"); if (hi >= 0) { const ci = html.indexOf(">", hi); html = html.substring(0, ci + 1) + INJECT_SCRIPT + html.substring(ci + 1); }
             else html = INJECT_SCRIPT + html;
             res.writeHead(r.status, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" }); res.end(Buffer.from(html, "utf-8")); return;
