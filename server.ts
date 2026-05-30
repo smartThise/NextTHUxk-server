@@ -459,8 +459,11 @@ const server = http.createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*"); res.setHeader("Access-Control-Allow-Headers", "*"); res.setHeader("Access-Control-Allow-Methods", "*");
     if (req.method === "OPTIONS") { res.writeHead(200); res.end(); return; }
 
-    // Pages
-    if (pathname === "/" || pathname === "/login") { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(LOGIN_HTML); return; }
+    // Pages — 已登录访问 / 自动跳 /app，未登录访问 /app 也允许（前端处理）
+    if (pathname === "/" || pathname === "/login") {
+        if (loginState === "done") { res.writeHead(302, { Location: "/app" }); res.end(); return; }
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(LOGIN_HTML); return;
+    }
     if (pathname === "/app") { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(APP_HTML); return; }
 
     // Auth API

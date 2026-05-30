@@ -275,7 +275,10 @@ async function launch(){
     // Load AI config
     var cfg=LS.get('config');if(cfg){if(cfg.api)$('ai-api').value=cfg.api;if(cfg.model)$('ai-model').value=cfg.model;if(cfg.token)$('ai-token').value=cfg.token;if(cfg.pref)$('ai-pref').value=cfg.pref}
     console.log('[NX] loaded',courses.length,'courses,',sel.length,'selected',S.isQueuePhase?'(queue phase)':'');
-  }catch(e){$('list').innerHTML='<div class="nx-empty nx-st err">❌ '+esc(e.message)+'</div>'}
+  }catch(e){
+    if(e.message&&e.message.includes('请先登录')){location.href='/';return}
+    $('list').innerHTML='<div class="nx-empty nx-st err">❌ '+esc(e.message)+'</div>';
+  }
 }
 
 // ═══════════════ Rendering ═══════════════
@@ -316,23 +319,102 @@ function renderCourses(list){
   el.querySelectorAll('.nx-add-stage').forEach(function(btn){btn.onclick=function(e){e.stopPropagation();var act=btn.parentElement,flag=act.querySelector('.nx-type-select')?.value||'bx',zy=parseInt(act.querySelector('.nx-zy-select')?.value)||3;addToStage(btn.dataset.code,btn.dataset.seq,flag,zy);btn.textContent='已暂存';btn.disabled=true}});
 }
 
-// Timetable preview
+// Timetable preview (完整移植自扩展 render.js)
 function renderPreviewTT(courses,label){
   var el=$('preview-tt'),info=$('preview-info'),rb=$('preview-reset');if(!el)return;
-  if(info)info.textContent=label||'';if(rb)rb.style.display=label&&label!=='当前已选'?'inline-block':'none';
-  S.previewMode=label==='当前已选'?'selected':'stage';if(label&&label.startsWith('草稿'))S.previewMode='draft';
+  if(info)info.textContent=label||'';
+  if(rb)rb.style.display=label&&label!=='当前已选'?'inline-block':'none';
+  S.previewMode=label==='当前已选'?'selected':'stage';
+  if(label&&label.startsWith('草稿'))S.previewMode='draft';
   if(!courses.length){el.innerHTML='<div class="nx-st">暂无课程</div>';return}
-  var tt={};courses.forEach(function(c){var lbl=c.teacher?c.name+'('+c.teacher+')':c.name;parseTimeSlots(c.time).forEach(function(s){if(!tt[s.day])tt[s.day]={};var entry={label:lbl,code:c.code,seq:c.seq||'0'};if(tt[s.day][s.slot]){var old=tt[s.day][s.slot];var items=old.items?old.items.concat(entry):[old].concat(entry);tt[s.day][s.slot]={label:items.map(function(e){return e.label}).join(' / '),conflict:true,items:items}}else tt[s.day][s.slot]=entry})});
-  var days=['周一','周二','周三','周四','周五','周六','周日'],sls=['1-2节','3-4节','5-6节','7-8节','9-10节','11-12节'];
-  var h='<table class="nx-tt"><thead><tr><th></th>';days.forEach(function(d){h+='<th>'+d+'</th>'});h+='</tr></thead><tbody>';
-  sls.forEach(function(slot){h+='<tr><th>'+slot+'</th>';days.forEach(function(day){var val=tt[day]&&tt[day][slot];if(val){var isC=val.conflict,items=isC?val.items:[val];var btns=items.map(function(it){return'<span class="nx-tt-rm" data-code="'+esc(it.code)+'" data-seq="'+esc(it.seq)+'" title="移除">✕</span>'}).join('');var lines=items.map(function(it){return'<div class="nx-tt-line"><span class="nx-tt-text">'+esc(it.label)+'</span></div>'}).join('');h+='<td class="'+(isC?'nx-c':'nx-s')+'"><div class="nx-tt-cell">'+lines+btns+'</div></td>'}else h+='<td></td>'});h+='</tr>'});h+='</tbody></table>';
-  var cr=courses.reduce(function(s,c){return s+(c.credits||0)},0);h+='<div class="nx-st ok" style="margin-top:6px">'+courses.length+'门 · '+cr+'学分</div>';
+  var tt={};
+  courses.forEach(function(c,ci){
+    var lbl=c.teacher?c.name+'('+c.teacher+')':c.name;
+    // 计算格子颜色和概率标签
+    var cellColor='',probLabel='',probBgColor='';
+    if(S.isQueuePhase){
+      var qKey=c.code+'_'+(c.seq||'0');
+      var qd=S.queueDataMap[qKey];
+      var cand=S.candidates.find(function(cc){return cc.code===c.code&&String(cc.seq)===String(c.seq||'0')});
+      if(c.isCandidate&&cand){
+        cellColor='#ff9500';probLabel='排队第'+cand.myPos+'/'+cand.queueTotal+'人';probBgColor='rgba(255,149,0,.14)';
+      }else if(S.previewMode==='selected'){
+        probLabel='已选';cellColor='#34c759';probBgColor='rgba(52,199,89,.14)';
+      }else if(qd){
+        if(qd.qRemaining>0){cellColor='#34c759';probLabel='余'+qd.qRemaining;probBgColor='rgba(52,199,89,.14)';}
+        else if(qd.qQueue>0){cellColor='#ff9500';probLabel='排队'+qd.qQueue+'人';probBgColor='rgba(255,149,0,.14)';}
+        else{cellColor='#ff3b30';probLabel='已满';probBgColor='rgba(255,59,48,.14)';}
+      }
+    }else if(S.previewMode==='selected'&&c.zy){
+      var sf=typeCodeToFlag(c.typeCode);
+      var p=calcProb(c,sf,c.zy);
+      if(p.prob>=0){cellColor=p.color;probLabel=p.percentLabel||p.label;probBgColor=probBg(p.color);}
+    }else if((S.previewMode==='stage'||S.previewMode==='draft')&&c.flag&&c.zy){
+      var ac=S.allCourses.find(function(x){return x.code===c.code&&String(x.seq||'0')===String(c.seq||'0')});
+      if(ac){var p=calcProb(ac,c.flag,c.zy);if(p.prob>=0){cellColor=p.color;probLabel=p.percentLabel||p.label;probBgColor=probBg(p.color);}}
+    }
+    parseTimeSlots(c.time).forEach(function(s){
+      if(!tt[s.day])tt[s.day]={};
+      var entry={label:lbl,ci:ci,code:c.code,seq:c.seq||'0',color:cellColor,probLabel:probLabel,probBgColor:probBgColor};
+      if(tt[s.day][s.slot]){
+        var old=tt[s.day][s.slot];
+        var labels=(old.conflict?old.items:[old]).concat(entry);
+        tt[s.day][s.slot]={label:labels.map(function(e){return e.label}).join(' / '),conflict:true,items:labels};
+      }else tt[s.day][s.slot]=entry;
+    });
+  });
+  var days=['周一','周二','周三','周四','周五','周六','周日'];
+  var sls=['1-2节','3-4节','5-6节','7-8节','9-10节','11-12节'];
+  var h='<table class="nx-tt"><thead><tr><th></th>';
+  days.forEach(function(d){h+='<th>'+d+'</th>'});
+  h+='</tr></thead><tbody>';
+  sls.forEach(function(slot){
+    h+='<tr><th>'+slot+'</th>';
+    days.forEach(function(day){
+      var val=tt[day]?tt[day][slot]:null;
+      if(val){
+        var isC=val.conflict;
+        var items=isC?val.items:[val];
+        var btns=items.map(function(it){return'<span class="nx-tt-rm" data-code="'+esc(it.code)+'" data-seq="'+esc(it.seq)+'" title="移除 '+esc(it.label)+'">✕</span>'}).join('');
+        var lines=items.map(function(it){
+          var pHtml=it.probLabel?'<span class="nx-tt-prob" style="background:'+it.probBgColor+';color:'+it.color+'">'+it.probLabel+'</span>':'';
+          return'<div class="nx-tt-line"><span class="nx-tt-text">'+esc(it.label)+'</span>'+pHtml+'</div>';
+        }).join('');
+        var cellClass=isC?'nx-c':'nx-s';
+        var cellStyle='';
+        if(!isC&&val.color){
+          cellStyle='background:'+val.color+'.1;color:'+val.color;
+        }
+        h+='<td class="'+cellClass+'" '+(cellStyle?'style="'+cellStyle+'"':'')+'><div class="nx-tt-cell">'+lines+btns+'</div></td>';
+      }else h+='<td></td>';
+    });
+    h+='</tr>';
+  });
+  h+='</tbody></table>';
+  var cr=courses.reduce(function(s,c){return s+(c.credits||0)},0);
+  h+='<div class="nx-st ok" style="margin-top:6px">'+courses.length+'门 · '+cr+'学分</div>';
   el.innerHTML=h;
-  el.querySelectorAll('.nx-tt-rm').forEach(function(btn){btn.onclick=function(){
-    var code=btn.dataset.code,seq=btn.dataset.seq;
-    if(S.previewMode==='selected'){if(!confirm('确认退选？'))return;apiPost('/drop?sem='+S.SEM,{code:code,seq:seq,isQueue:false}).then(function(r){toast(r.msg,r.ok);if(r.ok)refreshSelected()})}
-    else if(S.previewMode==='stage'){var idx=S.stageCart.findIndex(function(s){return s.code===code&&String(s.seq)==seq});if(idx>=0){S.stageCart.splice(idx,1);LS.set('stageCart',S.stageCart);renderStageCart();renderPreviewTT(S.stageCart,'暂存区预览')}}
-  }});
+  el.querySelectorAll('.nx-tt-rm').forEach(function(btn){
+    btn.onclick=function(){
+      var code=btn.dataset.code,seq=btn.dataset.seq;
+      if(S.previewMode==='selected'){
+        var cn=S.allCourses.find(function(x){return x.code===code&&String(x.seq||'0')===seq});
+        var nm=cn?cn.name:code;
+        if(!confirm('确认退选「'+nm+'」？'))return;
+        apiPost('/drop?sem='+S.SEM,{code:code,seq:seq,isQueue:false}).then(function(r){toast(r.msg,r.ok);if(r.ok)launch()});
+      }else if(S.previewMode==='stage'){
+        var idx=S.stageCart.findIndex(function(s){return s.code===code&&String(s.seq)==seq});
+        var nm=idx>=0?S.stageCart[idx].name:code;
+        if(!confirm('从暂存区移除「'+nm+'」？'))return;
+        if(idx>=0){S.stageCart.splice(idx,1);LS.set('stageCart',S.stageCart);renderStageCart();renderPreviewTT(S.stageCart,$('preview-info')?.textContent||'')}
+      }else if(S.previewMode==='draft'&&S.previewDraftIdx>=0&&S.savedDrafts[S.previewDraftIdx]){
+        var draft=S.savedDrafts[S.previewDraftIdx];
+        var idx=draft.courses.findIndex(function(s){return s.code===code&&String(s.seq)==seq});
+        if(!confirm('从草稿移除？'))return;
+        if(idx>=0){draft.courses.splice(idx,1);LS.set('drafts',S.savedDrafts);renderDrafts();renderPreviewTT(draft.courses,'草稿「'+draft.name+'」预览')}
+      }
+    };
+  });
 }
 
 // Stage cart
