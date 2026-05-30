@@ -68,12 +68,11 @@ function decrypt(data: string): string | null {
 }
 
 function packState(s: Session): string {
-  // Only send essential state to browser, not transient logging progress >20 entries
+  // 只存轻量状态，serverCache (catalog/volunteer 数据可达 MB 级) 不放入 cookie
   const slim: any = {
     id: s.id, c: s.cookies, ls: s.loginState, le: s.loginError,
-    lp: s.loginProgress.slice(-20), p2fa: s.pending2FA,
-    uid: s.storedUserId, pwd: s.storedPassword, wv: s.webvpnZhjwxkBase,
-    sc: s.serverCache, f: s.finger,
+    p2fa: s.pending2FA, uid: s.storedUserId, pwd: s.storedPassword,
+    wv: s.webvpnZhjwxkBase, f: s.finger,
   };
   return encrypt(JSON.stringify(slim));
 }
@@ -90,6 +89,7 @@ function unpackState(data: string): Session | null {
     s.serverCache = d.sc || { sem: "", plan: [], catalog: [], volunteer: {}, ts: 0 };
     s.finger = d.f || ("thu-proxy-" + (d.id || "x").substring(0, 8));
     s._dirty = false;
+    // serverCache 不从 cookie 恢复，重新拉取
     return s;
   } catch { return null; }
 }
@@ -526,8 +526,8 @@ const server = http.createServer(async (req, res) => {
   if (pathname === "/app") { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(APP_HTML); return; }
 
   // Auth API
-  if (pathname === "/api/login" && req.method === "POST") { const b = JSON.parse(await readBody(req)); doLogin(s, b.userId, b.password); json(res, s, { ok: true }); return; }
-  if (pathname === "/api/2fa" && req.method === "POST") { const b = JSON.parse(await readBody(req)); continue2FA(s, b.methodIdx, b.code); json(res, s, { ok: true }); return; }
+  if (pathname === "/api/login" && req.method === "POST") { const b = JSON.parse(await readBody(req)); await doLogin(s, b.userId, b.password); json(res, s, { ok: true }); return; }
+  if (pathname === "/api/2fa" && req.method === "POST") { const b = JSON.parse(await readBody(req)); await continue2FA(s, b.methodIdx, b.code); json(res, s, { ok: true }); return; }
   if (pathname === "/api/status") { json(res, s, { state: s.loginState, error: s.loginError, progress: s.loginProgress, need2fa: s.loginState === "need_2fa", methods: s.pending2FA?.methods || [] }); return; }
   if (pathname === "/api/logout" && req.method === "POST") {
     res.setHeader("Set-Cookie", `${COOKIE_NAME}=; Path=/; Max-Age=0`);
