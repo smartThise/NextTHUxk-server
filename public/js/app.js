@@ -80,27 +80,43 @@
     try {
       var t0 = Date.now();
 
-      // 1. Fetch init data (server caches slow data)
-      var d = await NX.fetchInitData(state.SEM, !!forceRefresh);
-      var plan = d.plan, catalog = d.catalog, volData = d.volunteer;
+      // 1. Check localStorage cache (extension-style staticData)
+      var coursesCache = forceRefresh ? null : NX.store.get('coursesCache');
+      var needFetch = !coursesCache || coursesCache.sem !== state.SEM || !coursesCache.courses || !coursesCache.courses.length;
 
-      state.queueDataMap = d.queueMap;
-      state.isQueuePhase = d.queuePhase;
-      state.candidateCourses = d.candidates;
+      var plan, catalog, volData, selectedForZy;
+      if (needFetch) {
+        // Full fetch: get everything from server
+        var d = await NX.fetchInitData(state.SEM, !!forceRefresh);
+        plan = d.plan; catalog = d.catalog; volData = d.volunteer;
+        state.queueDataMap = d.queueMap;
+        state.isQueuePhase = d.queuePhase;
+        state.candidateCourses = d.candidates;
+        state.allCourses = NX.mergeStaticData(catalog, volData, plan);
+        NX.store.set('coursesCache', { sem: state.SEM, courses: state.allCourses, plan: plan, ts: Date.now() });
+        var selectedForZy = d.selected;
+      } else {
+        // Cache hit: use cached courses, fetch only per-user data
+        console.log('[NextTHUxk] using cached', coursesCache.courses.length, 'courses');
+        state.allCourses = coursesCache.courses;
+        plan = coursesCache.plan || [];
+        var q = await NX.fetchQueue(state.SEM).catch(function () { return { map: {}, phase: false }; });
+        state.queueDataMap = q.map;
+        state.isQueuePhase = q.phase;
+        state.candidateCourses = await NX.fetchCandidates(state.SEM).catch(function () { return []; });
+        var selectedForZy = await NX.fetchSelected(state.SEM).catch(function () { return []; });
+      }
       state.planData = plan;
 
-      // 2. Merge static data
-      state.allCourses = NX.mergeStaticData(catalog, volData, plan);
-
-      // 3. Mark candidate courses
+      // 2. Mark candidate courses
       if (state.candidateCourses.length) {
         var candCodes = new Set(state.candidateCourses.map(function (c) { return c.code; }));
         state.allCourses.forEach(function (c) { if (candCodes.has(c.code)) c.isCandidate = true; });
       }
 
-      // 4. Resolve ZY
+      // 3. Resolve ZY
       var selMap = {};
-      d.selected.forEach(function (s) { selMap[s.code + '_' + s.seq] = s; });
+      selectedForZy.forEach(function (s) { selMap[s.code + '_' + s.seq] = s; });
       var zyCache = NX.store.get('zyCache') || {};
       var cacheUpdated = await NX.resolveCourseZy(state.allCourses, selMap, zyCache);
       if (cacheUpdated) NX.store.set('zyCache', zyCache);
@@ -158,7 +174,7 @@
         if (cfg.pref) document.getElementById('ai-pref').value = cfg.pref;
       }
 
-      console.log('[NextTHUxk] loaded', state.allCourses.length, 'courses,', d.selected.length, 'selected');
+      console.log('[NextTHUxk] loaded', state.allCourses.length, 'courses,', selectedForZy.length, 'selected');
     } catch (e) {
       if (e.message && e.message.includes('请先登录')) { location.href = '/'; return; }
       listEl.innerHTML = '<div class="nx-empty nx-st err">❌ ' + NX.esc(e.message) + '</div>';
