@@ -224,9 +224,23 @@ var apiBase='/api';
 async function apiFetch(path){var r=await fetch(apiBase+path);if(!r.ok){var e=await r.json().catch(function(){return{error:'HTTP '+r.status}});throw new Error(e.error||'HTTP '+r.status)}return r.json()}
 async function apiPost(path,body){var r=await fetch(apiBase+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return r.json()}
 
+// 页内学期输入（替代 prompt，兼容 VSCode 内置浏览器）
+function askSem(){
+  return new Promise(function(resolve){
+    var el=$('list');if(!el){resolve('');return}
+    el.innerHTML='<div style="padding:40px 20px;text-align:center"><div style="font-size:16px;font-weight:700;margin-bottom:16px">请输入当前学期</div><input type="text" id="sem-input" value="2025-2026-1" style="padding:10px 16px;border-radius:10px;border:1.5px solid rgba(0,0,0,.15);font-size:16px;width:240px;text-align:center;outline:none;font-family:inherit"><br><button id="sem-go" style="margin-top:16px;padding:10px 32px;border-radius:10px;background:linear-gradient(135deg,#7c6aef,#6366f1);color:#fff;border:none;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">开始加载</button></div>';
+    $('sem-go').onclick=function(){var v=($('sem-input').value||'').trim();resolve(v||'')};
+    $('sem-input').onkeydown=function(e){if(e.key==='Enter')$('sem-go').click()};
+    $('sem-input').focus();
+  });
+}
+
 // ═══════════════ Launch ═══════════════
 async function launch(){
-  S.SEM=LS.get('sem')||prompt('请输入学期（如 2025-2026-1）：','2025-2026-1')||'2025-2026-1';LS.set('sem',S.SEM);
+  if(!S.SEM){S.SEM=LS.get('sem')||'';}
+  if(!S.SEM){S.SEM=await askSem();}
+  if(!S.SEM){$('list').innerHTML='<div class="nx-empty">需要输入学期</div>';return;}
+  LS.set('sem',S.SEM);
   $('sem-btn').textContent=S.SEM;
   $('list').innerHTML='<div class="nx-empty"><span class="nx-spin"></span>&ensp;正在加载数据…</div>';
   try{
