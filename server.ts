@@ -604,6 +604,10 @@ const server = http.createServer(async (req, res) => {
         const forceRefresh = parsed.query.refresh === "1";
         let plan: any[], catalog: any[], volData: Record<string, any>;
         let selected: any[], candidates: any[];
+        // 快速检测课余量模式（只拉一页,与其他数据并行）
+        const qPhaseP = (async () => {
+          try { const h = await fetchGbk(s, zhjwxkUrl(s, `/xkBks.vxkBksXkbBs.do?m=xkqkSearch&p_xnxq=${sem}`)); return h.includes("gridData") && !h.includes("accessDenied"); } catch { return false; }
+        })();
         if (!forceRefresh && s.serverCache.sem === sem && s.serverCache.catalog.length > 0) {
           plan = s.serverCache.plan; catalog = s.serverCache.catalog; volData = s.serverCache.volunteer;
           [selected, candidates] = await Promise.all([
@@ -622,8 +626,9 @@ const server = http.createServer(async (req, res) => {
           candidates = await fetchCandidateCourses(s, sem).catch(e => { console.log(`  [init] candidates FAIL: ${e.message}`); return []; });
           s.serverCache = { sem, plan, catalog, volunteer: volData, ts: Date.now() };
         }
-        console.log(`  [init] plan=${plan.length} catalog=${catalog.length} volData=${Object.keys(volData).length} selected=${selected.length} candidates=${candidates.length}`);
-        json(res, s, { plan, catalog, volunteer: volData, selected, queueMap: {}, queuePhase: false, candidates }); return;
+        const queuePhase = await qPhaseP;
+        console.log(`  [init] plan=${plan.length} catalog=${catalog.length} volData=${Object.keys(volData).length} selected=${selected.length} candidates=${candidates.length} queuePhase=${queuePhase}`);
+        json(res, s, { plan, catalog, volunteer: volData, selected, queueMap: {}, queuePhase, candidates }); return;
       }
       if (pathname === "/api/plan") { json(res, s, await fetchTrainingPlan(s, sem)); return; }
       if (pathname === "/api/courses") { json(res, s, s.serverCache.sem === sem ? s.serverCache.catalog : await fetchCourseCatalog(s, sem)); return; }
