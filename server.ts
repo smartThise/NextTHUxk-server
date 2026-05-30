@@ -372,10 +372,13 @@ async function fetchSelectedCourses(s: Session, sem: string) {
     const typeLabel = zm[5] === "是" ? "体育" : ({ "006": "必修", "008": "限选", "007": "任选" }[zm[4]] || "");
     zyMap[zm[1] + "_" + zm[2]] = { zy: parseInt(zm[3]), typeCode: zm[4], typeLabel };
   }
+  console.log(`  [selected] zyMap entries: ${Object.keys(zyMap).length}`);
   const selected: any[] = [];
+  let skipped = 0;
   doc("tr.trr2").each((_, row) => {
     const radio = doc(row).find('input[name="p_del_id"]'); const val = radio.attr("value") || "";
-    const parts = val.split(";"); const code = parts[1] || "", seq = parts[2] || ""; if (!code) return;
+    const parts = val.split(";"); const code = parts[1] || "", seq = parts[2] || "";
+    if (!code) { skipped++; return; }
     const tds = doc(row).find("td"); const cell = (i: number) => (tds.eq(i)?.text() || "").trim().replace(/\s+/g, " ");
     const zyInfo = zyMap[code + "_" + seq] || {};
     const cell2 = cell(2) || ""; const zyFromCell = cell2.match(/第([一二三])志愿/);
@@ -384,6 +387,7 @@ async function fetchSelectedCourses(s: Session, sem: string) {
     const typeLabel = isSportsCourse ? "体育" : (cell(1) || zyInfo.typeLabel || "");
     selected.push({ code, seq, name: cell(3) || cell(1), teacher: cell(7) || cell(2), time: cell(6) || cell(3), credits: parseFloat(cell(8) || cell(4)) || 0, typeLabel, zy: zyNum, typeCode: isSportsCourse ? "ty" : (zyInfo.typeCode || "") });
   });
+  console.log(`  [selected] rows parsed: ${selected.length}, skipped (no p_del_id): ${skipped}, codes: ${selected.map(c => c.code + '_' + c.seq).join(', ')}`);
   return selected;
 }
 async function fetchQueueData(s: Session, sem: string) {
