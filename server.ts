@@ -77,15 +77,19 @@ async function followChain(urlStr: string, maxHops = 15): Promise<{ finalUrl: st
     return { finalUrl: cur, html };
 }
 // zhjwxk 页面全部 GBK
-async function fetchGbk(urlStr: string): Promise<string> {
+async function fetchGbk(urlStr: string, label?: string): Promise<string> {
+    console.log(`  [fetchGbk] ${label || urlStr.substring(0, 80)}`);
     const r = await fetch(urlStr, { headers: { "User-Agent": UA, Cookie: ch() } });
     saveCookies(r);
+    console.log(`  [fetchGbk] status=${r.status} len=${(await r.clone().arrayBuffer()).byteLength}`);
     return iconv.decode(Buffer.from(await r.arrayBuffer()), "gbk");
 }
-async function postFormGbk(urlStr: string, form: Record<string, string>): Promise<string> {
+async function postFormGbk(urlStr: string, form: Record<string, string>, label?: string): Promise<string> {
+    console.log(`  [postFormGbk] ${label || urlStr.substring(0, 80)}`);
     const body = Object.entries(form).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
     const r = await fetch(urlStr, { method: "POST", headers: { "User-Agent": UA, Cookie: ch(), "Content-Type": "application/x-www-form-urlencoded" }, body });
     saveCookies(r);
+    console.log(`  [postFormGbk] status=${r.status} len=${(await r.clone().arrayBuffer()).byteLength}`);
     return iconv.decode(Buffer.from(await r.arrayBuffer()), "gbk");
 }
 
@@ -512,19 +516,19 @@ const server = http.createServer(async (req, res) => {
                 } else {
                     console.log(`  [init] 拉取 catalog+plan+volunteer...`);
                     [plan, catalog, volData] = await Promise.all([
-                        fetchTrainingPlan(sem).catch(() => []),
-                        fetchCourseCatalog(sem).catch(() => []),
-                        fetchVolunteer(sem).catch(() => ({})),
+                        fetchTrainingPlan(sem).catch(e => { console.log(`  [init] plan FAIL: ${e.message}`); return []; }),
+                        fetchCourseCatalog(sem).catch(e => { console.log(`  [init] catalog FAIL: ${e.message}`); return []; }),
+                        fetchVolunteer(sem).catch(e => { console.log(`  [init] volunteer FAIL: ${e.message}`); return {}; }),
                     ]);
+                    console.log(`  [init] 结果: plan=${plan.length}, catalog=${catalog.length}, volData=${Object.keys(volData).length}`);
                     serverCache = { sem, plan, catalog, volunteer: volData, ts: Date.now() };
-                    console.log(`  [init] 缓存完成: ${catalog.length} 门课程`);
                 }
-                // 快数据实时拉
                 const [selected, qResult, candidates] = await Promise.all([
-                    fetchSelectedCourses(sem).catch(() => []),
-                    fetchQueueData(sem).catch(() => ({ map: {}, phase: false })),
-                    fetchCandidateCourses(sem).catch(() => []),
+                    fetchSelectedCourses(sem).catch(e => { console.log(`  [init] selected FAIL: ${e.message}`); return []; }),
+                    fetchQueueData(sem).catch(e => { console.log(`  [init] queue FAIL: ${e.message}`); return { map: {}, phase: false }; }),
+                    fetchCandidateCourses(sem).catch(e => { console.log(`  [init] candidates FAIL: ${e.message}`); return []; }),
                 ]);
+                console.log(`  [init] 快数据: selected=${selected.length}, queue=${Object.keys(qResult.map).length}, candidates=${candidates.length}`);
                 json(res, { plan, catalog, volunteer: volData, selected, queueMap: qResult.map, queuePhase: qResult.phase, candidates });
                 return;
             }
