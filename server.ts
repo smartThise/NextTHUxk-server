@@ -13,7 +13,6 @@ import url from "url";
 import crypto from "crypto";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-const FINGER = "thu-local-proxy-v1";
 const ZHJWXK = "https://zhjwxk.cic.tsinghua.edu.cn";
 const ID_LOGIN = "https://id.tsinghua.edu.cn/do/off/ui/auth/login/check";
 const DOUBLE_AUTH = "https://id.tsinghua.edu.cn/b/doubleAuth/login";
@@ -33,13 +32,15 @@ interface Session {
   webvpnZhjwxkBase: string;
   serverCache: { sem: string; plan: any[]; catalog: any[]; volunteer: Record<string, any>; ts: number };
   lastAccess: number;
+  finger: string;
 }
 
 const sessions = new Map<string, Session>();
 
 function createSession(): Session {
+  const id = crypto.randomUUID();
   return {
-    id: crypto.randomUUID(),
+    id,
     cookies: {},
     loginState: "idle",
     loginError: "",
@@ -50,6 +51,7 @@ function createSession(): Session {
     webvpnZhjwxkBase: "",
     serverCache: { sem: "", plan: [], catalog: [], volunteer: {}, ts: 0 },
     lastAccess: Date.now(),
+    finger: "thu-proxy-" + id.substring(0, 8),  // 每 session 独立指纹
   };
 }
 
@@ -62,6 +64,7 @@ function getSession(req: http.IncomingMessage, res: http.ServerResponse): Sessio
     s = createSession();
     sessions.set(s.id, s);
     res.setHeader("Set-Cookie", `nx_sid=${s.id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL / 1000}`);
+    console.log(`  [session] NEW ${s.id} finger=${s.finger}`);
   }
   s.lastAccess = Date.now();
   return s;
@@ -157,13 +160,13 @@ async function doLogin(s: Session, userId: string, password: string) {
     const sm2Key1 = cheerio.load(lpHtml)("#sm2publicKey").text();
     if (!sm2Key1) throw new Error("无法获取 SM2 key");
     sLog(s, "CAS 认证中...");
-    const loginResp = await postForm(s, ID_LOGIN, { i_user: userId, i_pass: "04" + sm2.doEncrypt(password, sm2Key1), fingerPrint: FINGER, fingerGenPrint: "", i_captcha: "" });
+    const loginResp = await postForm(s, ID_LOGIN, { i_user: userId, i_pass: "04" + sm2.doEncrypt(password, sm2Key1), fingerPrint: s.finger, fingerGenPrint: "", i_captcha: "" });
     if (loginResp.includes("二次认证")) { await handle2FAResponse(s); return; }
     await finishLogin(s, loginResp);
   } catch (e: any) { s.loginState = "error"; s.loginError = e.message; sLog(s, `错误: ${e.message}`); }
 }
 async function handle2FAResponse(s: Session) {
-  sLog(s, "需要二次认证"); s.loginState = "need_2fa";
+  sLog(s, "需要二次认证");
   const r1 = JSON.parse(await postForm(s, DOUBLE_AUTH, { action: "FIND_APPROACHES" }));
   const { hasWeChatBool, phone, hasTotp } = r1.object;
   const methods: string[] = [], methodKeys: string[] = [];
@@ -171,6 +174,7 @@ async function handle2FAResponse(s: Session) {
   if (phone) { methods.push(`手机 (${phone})`); methodKeys.push("mobile"); }
   if (hasTotp) { methods.push("动态口令"); methodKeys.push("totp"); }
   s.pending2FA = { methods, methodKeys };
+  s.loginState = "need_2fa";  // 在 pending2FA 就绪后再设，避免前端拿到空 methods
 }
 async function continue2FA(s: Session, methodIdx: number, code: string) {
   if (!s.pending2FA) return;
@@ -180,9 +184,9 @@ async function continue2FA(s: Session, methodIdx: number, code: string) {
     const r3 = JSON.parse(await postForm(s, DOUBLE_AUTH, { action: method === "totp" ? "VERITY_TOTP_CODE" : "VERITY_CODE", vericode: code }));
     if (r3.result !== "success") throw new Error("验证失败: " + r3.msg);
     sLog(s, "2FA 通过");
-    await postForm(s, SAVE_FINGER, { fingerprint: FINGER, deviceName: "THU-Local-Proxy", radioVal: "是" });
+    await postForm(s, SAVE_FINGER, { fingerprint: s.finger, deviceName: "THU-Local-Proxy", radioVal: "是" });
     const html = await fetchAuto(s, "https://id.tsinghua.edu.cn" + r3.object.redirectUrl);
-    s.pending2FA = null; await finishLogin(s, html);
+    s.pending2FA = null; s.loginState = "logging_in"; await finishLogin(s, html);
   } catch (e: any) { s.loginState = "error"; s.loginError = e.message; sLog(s, `错误: ${e.message}`); }
 }
 async function finishLogin(s: Session, loginResp: string) {
@@ -194,7 +198,7 @@ async function finishLogin(s: Session, loginResp: string) {
   const sm2Key2 = cheerio.load(xkHtml)("#sm2publicKey").text();
   if (!sm2Key2) throw new Error(`无法获取选课系统 SM2 key (finalUrl=${finalUrl})`);
   sLog(s, "选课系统 CAS 认证...");
-  let cr = await postForm(s, ID_LOGIN, { i_user: s.storedUserId, i_pass: "04" + sm2.doEncrypt(s.storedPassword, sm2Key2), fingerPrint: FINGER, fingerGenPrint: "", i_captcha: "" });
+  let cr = await postForm(s, ID_LOGIN, { i_user: s.storedUserId, i_pass: "04" + sm2.doEncrypt(s.storedPassword, sm2Key2), fingerPrint: s.finger, fingerGenPrint: "", i_captcha: "" });
   if (cr.includes("二次认证")) { await handle2FAResponse(s); return; }
   if (!cr.includes("登录成功")) throw new Error("选课系统 CAS 登录失败");
   sLog(s, "✅ 选课系统登录成功!");

@@ -192,6 +192,11 @@ function poll(){
         $('btn').disabled=false;
         $('otp').classList.remove('on');
       }else if(d.state==='need_2fa'){
+        if(!d.methods||!d.methods.length){
+          $('st').className='st loading';
+          $('st').innerHTML='<span class="spin"></span> 需要二次认证…';
+          return;  // methods 还没就绪，继续轮询
+        }
         clearInterval(t);
         $('st').className='st loading';
         $('st').innerHTML='<span class="spin"></span> 需要二次认证';
