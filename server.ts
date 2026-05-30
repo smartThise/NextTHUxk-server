@@ -17,9 +17,11 @@ const ZHJWXK = "https://zhjwxk.cic.tsinghua.edu.cn";
 const ID_LOGIN = "https://id.tsinghua.edu.cn/do/off/ui/auth/login/check";
 const DOUBLE_AUTH = "https://id.tsinghua.edu.cn/b/doubleAuth/login";
 const SAVE_FINGER = "https://id.tsinghua.edu.cn/b/doubleAuth/personal/saveFinger";
-const SESSION_TTL = 24 * 60 * 60 * 1000; // 24h
+const SESSION_TTL = 24 * 60 * 60; // 24h in seconds
+const COOKIE_NAME = "nx_state";
+const SECRET = crypto.randomBytes(32).toString("base64"); // 每次启动重置，旧 cookie 自动失效
 
-// ═══════════════ Session ═══════════════
+// ═══════════════ Session — 状态存在浏览器 Cookie，服务端零存储 ═══════════════
 interface Session {
   id: string;
   cookies: Record<string, string>;
@@ -31,52 +33,80 @@ interface Session {
   storedPassword: string;
   webvpnZhjwxkBase: string;
   serverCache: { sem: string; plan: any[]; catalog: any[]; volunteer: Record<string, any>; ts: number };
-  lastAccess: number;
   finger: string;
+  _dirty: boolean; // track if state changed
 }
-
-const sessions = new Map<string, Session>();
 
 function createSession(): Session {
   const id = crypto.randomUUID();
   return {
-    id,
-    cookies: {},
-    loginState: "idle",
-    loginError: "",
-    loginProgress: [],
-    pending2FA: null,
-    storedUserId: "",
-    storedPassword: "",
-    webvpnZhjwxkBase: "",
+    id, cookies: {}, loginState: "idle", loginError: "", loginProgress: [],
+    pending2FA: null, storedUserId: "", storedPassword: "", webvpnZhjwxkBase: "",
     serverCache: { sem: "", plan: [], catalog: [], volunteer: {}, ts: 0 },
-    lastAccess: Date.now(),
-    finger: "thu-proxy-" + id.substring(0, 8),  // 每 session 独立指纹
+    finger: "thu-proxy-" + id.substring(0, 8), _dirty: false,
   };
 }
 
-function getSession(req: http.IncomingMessage, res: http.ServerResponse): Session {
+// Simple encrypt/decrypt to prevent cookie tampering
+function encrypt(text: string): string {
+  const iv = crypto.randomBytes(16);
+  const key = crypto.createHash("sha256").update(SECRET).digest();
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const enc = Buffer.concat([cipher.update(text, "utf-8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, enc]).toString("base64url");
+}
+function decrypt(data: string): string | null {
+  try {
+    const buf = Buffer.from(data, "base64url");
+    const iv = buf.subarray(0, 16), tag = buf.subarray(16, 32), enc = buf.subarray(32);
+    const key = crypto.createHash("sha256").update(SECRET).digest();
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(enc), decipher.final()]).toString("utf-8");
+  } catch { return null; }
+}
+
+function packState(s: Session): string {
+  // Only send essential state to browser, not transient logging progress >20 entries
+  const slim: any = {
+    id: s.id, c: s.cookies, ls: s.loginState, le: s.loginError,
+    lp: s.loginProgress.slice(-20), p2fa: s.pending2FA,
+    uid: s.storedUserId, pwd: s.storedPassword, wv: s.webvpnZhjwxkBase,
+    sc: s.serverCache, f: s.finger,
+  };
+  return encrypt(JSON.stringify(slim));
+}
+
+function unpackState(data: string): Session | null {
+  const json = decrypt(data);
+  if (!json) return null;
+  try {
+    const d = JSON.parse(json);
+    const s = createSession();
+    s.id = d.id; s.cookies = d.c || {}; s.loginState = d.ls; s.loginError = d.le || "";
+    s.loginProgress = d.lp || []; s.pending2FA = d.p2fa; s.storedUserId = d.uid || "";
+    s.storedPassword = d.pwd || ""; s.webvpnZhjwxkBase = d.wv || "";
+    s.serverCache = d.sc || { sem: "", plan: [], catalog: [], volunteer: {}, ts: 0 };
+    s.finger = d.f || ("thu-proxy-" + (d.id || "x").substring(0, 8));
+    s._dirty = false;
+    return s;
+  } catch { return null; }
+}
+
+function getSession(req: http.IncomingMessage): Session {
   const cookieHeader = req.headers.cookie || "";
-  const sidMatch = cookieHeader.match(/nx_sid=([^;]+)/);
-  let sid = sidMatch ? sidMatch[1] : "";
-  let s = sid ? sessions.get(sid) : undefined;
-  if (!s) {
-    s = createSession();
-    sessions.set(s.id, s);
-    res.setHeader("Set-Cookie", `nx_sid=${s.id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL / 1000}`);
-    console.log(`  [session] NEW ${s.id} finger=${s.finger}`);
-  }
-  s.lastAccess = Date.now();
+  const m = cookieHeader.match(new RegExp(COOKIE_NAME + "=([^;]+)"));
+  if (m) { const s = unpackState(m[1]); if (s) return s; }
+  const s = createSession();
+  console.log(`  [session] NEW ${s.id}`);
   return s;
 }
 
-// Cleanup expired sessions every 10 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, s] of sessions) {
-    if (now - s.lastAccess > SESSION_TTL) sessions.delete(id);
-  }
-}, 10 * 60 * 1000).unref();
+function saveState(res: http.ServerResponse, s: Session) {
+  const val = packState(s);
+  res.setHeader("Set-Cookie", `${COOKIE_NAME}=${val}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL}`);
+}
 
 // ═══════════════ HTTP helpers (session-scoped) ═══════════════
 function ch(s: Session) { return Object.entries(s.cookies).map(([k, v]) => `${k}=${v}`).join("; "); }
@@ -84,13 +114,13 @@ function saveCookies(s: Session, r: Response) {
   const raw = (r.headers as any).raw?.();
   if (raw?.["set-cookie"]) for (const c of raw["set-cookie"]) {
     const [seg] = c.split(";"); const eq = seg.indexOf("=");
-    if (eq > 0) s.cookies[seg.substring(0, eq).trim()] = seg.substring(eq + 1).trim();
+    if (eq > 0) { s.cookies[seg.substring(0, eq).trim()] = seg.substring(eq + 1).trim(); s._dirty = true; }
   }
 }
 function zhjwxkUrl(s: Session, p: string): string {
   return s.webvpnZhjwxkBase ? s.webvpnZhjwxkBase + p : ZHJWXK + p;
 }
-function sLog(s: Session, msg: string) { s.loginProgress.push(`[${new Date().toLocaleTimeString()}] ${msg}`); console.log(`  [${s.id.substring(0, 8)}] ${msg}`); }
+function sLog(s: Session, msg: string) { s.loginProgress.push(`[${new Date().toLocaleTimeString()}] ${msg}`); s._dirty = true; console.log(`  [${s.id.substring(0, 8)}] ${msg}`); }
 
 async function decodeBody(r: Response, urlHint?: string): Promise<string> {
   const buf = Buffer.from(await r.arrayBuffer());
@@ -206,6 +236,7 @@ async function finishLogin(s: Session, loginResp: string) {
   const wvMatch = loggedInUrl.match(/^(https:\/\/webvpn\.tsinghua\.edu\.cn\/\w+\/[^/]+\/)/);
   if (wvMatch) { s.webvpnZhjwxkBase = wvMatch[1]; sLog(s, "WebVPN proxy base: " + s.webvpnZhjwxkBase); }
   sLog(s, "选课会话已建立");
+  s.storedPassword = "";  // 登录完成后清除密码
   s.loginState = "done";
 }
 
@@ -472,7 +503,10 @@ const APP_HTML = fs.readFileSync(path.join(__dirname, "public", "app.html"), "ut
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise(resolve => { let b = ""; req.on("data", (c: Buffer) => b += c); req.on("end", () => resolve(b)); });
 }
-function json(res: http.ServerResponse, data: any, status = 200) { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(data)); }
+function json(res: http.ServerResponse, s: Session, data: any, status = 200) {
+  if (s._dirty) saveState(res, s);
+  res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(data));
+}
 
 const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url || "/", true);
@@ -480,7 +514,7 @@ const server = http.createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*"); res.setHeader("Access-Control-Allow-Headers", "*"); res.setHeader("Access-Control-Allow-Methods", "*");
   if (req.method === "OPTIONS") { res.writeHead(200); res.end(); return; }
 
-  const s = getSession(req, res);
+  const s = getSession(req);
 
   if (pathname === "/health") { res.writeHead(200, { "Content-Type": "text/plain" }); res.end("OK"); return; }
 
@@ -492,18 +526,17 @@ const server = http.createServer(async (req, res) => {
   if (pathname === "/app") { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(APP_HTML); return; }
 
   // Auth API
-  if (pathname === "/api/login" && req.method === "POST") { const b = JSON.parse(await readBody(req)); doLogin(s, b.userId, b.password); json(res, { ok: true }); return; }
-  if (pathname === "/api/2fa" && req.method === "POST") { const b = JSON.parse(await readBody(req)); continue2FA(s, b.methodIdx, b.code); json(res, { ok: true }); return; }
-  if (pathname === "/api/status") { json(res, { state: s.loginState, error: s.loginError, progress: s.loginProgress, need2fa: s.loginState === "need_2fa", methods: s.pending2FA?.methods || [] }); return; }
+  if (pathname === "/api/login" && req.method === "POST") { const b = JSON.parse(await readBody(req)); doLogin(s, b.userId, b.password); json(res, s, { ok: true }); return; }
+  if (pathname === "/api/2fa" && req.method === "POST") { const b = JSON.parse(await readBody(req)); continue2FA(s, b.methodIdx, b.code); json(res, s, { ok: true }); return; }
+  if (pathname === "/api/status") { json(res, s, { state: s.loginState, error: s.loginError, progress: s.loginProgress, need2fa: s.loginState === "need_2fa", methods: s.pending2FA?.methods || [] }); return; }
   if (pathname === "/api/logout" && req.method === "POST") {
-    sessions.delete(s.id);
-    res.setHeader("Set-Cookie", "nx_sid=; Path=/; Max-Age=0");
-    json(res, { ok: true }); return;
+    res.setHeader("Set-Cookie", `${COOKIE_NAME}=; Path=/; Max-Age=0`);
+    json(res, s, { ok: true }); return;
   }
 
   // Data API
   if (pathname.startsWith("/api/")) {
-    if (s.loginState !== "done") { json(res, { error: "请先登录" }, 401); return; }
+    if (s.loginState !== "done") { json(res, s, { error: "请先登录" }, 401); return; }
     const sem = (parsed.query.sem || "") as string;
     try {
       if (pathname === "/api/init") {
@@ -527,21 +560,21 @@ const server = http.createServer(async (req, res) => {
           fetchCandidateCourses(s, sem).catch(e => { console.log(`  [init] candidates FAIL: ${e.message}`); return []; }),
         ]);
         console.log(`  [init] 快数据: selected=${selected.length}, queue=${Object.keys(qResult.map).length}, candidates=${candidates.length}`);
-        json(res, { plan, catalog, volunteer: volData, selected, queueMap: qResult.map, queuePhase: qResult.phase, candidates }); return;
+        json(res, s, { plan, catalog, volunteer: volData, selected, queueMap: qResult.map, queuePhase: qResult.phase, candidates }); return;
       }
-      if (pathname === "/api/plan") { json(res, await fetchTrainingPlan(s, sem)); return; }
-      if (pathname === "/api/courses") { json(res, s.serverCache.sem === sem ? s.serverCache.catalog : await fetchCourseCatalog(s, sem)); return; }
-      if (pathname === "/api/volunteer") { json(res, s.serverCache.sem === sem ? s.serverCache.volunteer : await fetchVolunteer(s, sem)); return; }
-      if (pathname === "/api/selected") { json(res, await fetchSelectedCourses(s, sem)); return; }
-      if (pathname === "/api/queue") { json(res, await fetchQueueData(s, sem)); return; }
-      if (pathname === "/api/candidates") { json(res, await fetchCandidateCourses(s, sem)); return; }
-      if (pathname === "/api/levelTable") { json(res, await fetchLevelTable(s, sem)); return; }
-      if (pathname === "/api/detail") { json(res, await fetchCourseDetail(s, parsed.query.teacherId as string, parsed.query.code as string)); return; }
-      if (pathname === "/api/submit" && req.method === "POST") { const b = JSON.parse(await readBody(req)); json(res, await submitCourseApi(s, sem, b.code, b.seq, b.zy, b.flag)); return; }
-      if (pathname === "/api/drop" && req.method === "POST") { const b = JSON.parse(await readBody(req)); json(res, await dropCourseApi(s, sem, b.code, b.seq, b.isQueue)); return; }
-      if (pathname === "/api/changeZy" && req.method === "POST") { const b = JSON.parse(await readBody(req)); json(res, await changeVolunteerApi(s, sem, b.code, b.seq, b.zy)); return; }
-      json(res, { error: "Unknown API" }, 404); return;
-    } catch (e: any) { json(res, { error: e.message }, 500); return; }
+      if (pathname === "/api/plan") { json(res, s, await fetchTrainingPlan(s, sem)); return; }
+      if (pathname === "/api/courses") { json(res, s, s.serverCache.sem === sem ? s.serverCache.catalog : await fetchCourseCatalog(s, sem)); return; }
+      if (pathname === "/api/volunteer") { json(res, s, s.serverCache.sem === sem ? s.serverCache.volunteer : await fetchVolunteer(s, sem)); return; }
+      if (pathname === "/api/selected") { json(res, s, await fetchSelectedCourses(s, sem)); return; }
+      if (pathname === "/api/queue") { json(res, s, await fetchQueueData(s, sem)); return; }
+      if (pathname === "/api/candidates") { json(res, s, await fetchCandidateCourses(s, sem)); return; }
+      if (pathname === "/api/levelTable") { json(res, s, await fetchLevelTable(s, sem)); return; }
+      if (pathname === "/api/detail") { json(res, s, await fetchCourseDetail(s, parsed.query.teacherId as string, parsed.query.code as string)); return; }
+      if (pathname === "/api/submit" && req.method === "POST") { const b = JSON.parse(await readBody(req)); json(res, s, await submitCourseApi(s, sem, b.code, b.seq, b.zy, b.flag)); return; }
+      if (pathname === "/api/drop" && req.method === "POST") { const b = JSON.parse(await readBody(req)); json(res, s, await dropCourseApi(s, sem, b.code, b.seq, b.isQueue)); return; }
+      if (pathname === "/api/changeZy" && req.method === "POST") { const b = JSON.parse(await readBody(req)); json(res, s, await changeVolunteerApi(s, sem, b.code, b.seq, b.zy)); return; }
+      json(res, s, { error: "Unknown API" }, 404); return;
+    } catch (e: any) { json(res, s, { error: e.message }, 500); return; }
   }
 
   // Static files

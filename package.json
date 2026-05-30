@@ -4,7 +4,8 @@
   "description": "NextTHUxk Server — 每个人的下一代选课。本地/云一键部署，不需要浏览器扩展。",
   "private": true,
   "scripts": {
-    "start": "OPENSSL_CONF=./openssl.cnf npx tsx server.ts"
+    "start": "OPENSSL_CONF=./openssl.cnf npx tsx server.ts",
+    "render": "npx tsx server-render.ts"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
