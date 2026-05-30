@@ -288,27 +288,76 @@ async function fetchTrainingPlan(s: Session, sem: string) {
   const html = await fetchGbk(s, zhjwxkUrl(s, `/jhBks.vjhBksPyfakcbBs.do?m=showBksZxZdxjxjhXmxqkclist&p_xnxq=${sem}`));
   return parsePlan(cheerio.load(html));
 }
-async function fetchCourseCatalog(s: Session, sem: string) {
+// 并发翻页通用函数
+async function fetchPaginated(s: Session, sem: string, path: string, parse: (html: string) => any[], batchSize = 10) {
   const all: any[] = [];
-  for (let p = -1; p <= 200; p++) {
-    const u = p === -1 ? zhjwxkUrl(s, `/xkBks.vxkBksJxjhBs.do?m=kkxxSearch&p_xnxq=${sem}`) : zhjwxkUrl(s, `/xkBks.vxkBksJxjhBs.do?m=kkxxSearch&p_xnxq=${sem}&page=${p}`);
-    try { const html = await fetchGbk(s, u); const batch = parseCatalog(cheerio.load(html)); if (!batch.length && p >= 0) break; all.push(...batch); } catch { break; }
+  // Page -1 first (index page, no page param)
+  try {
+    const html = await fetchGbk(s, zhjwxkUrl(s, `/${path}&p_xnxq=${sem}`));
+    all.push(...parse(html));
+  } catch { return all; }
+
+  // Parallel batches
+  for (let start = 0; start <= 200; start += batchSize) {
+    const batch = await Promise.all(
+      Array.from({ length: batchSize }, (_, i) => start + i).map(async p => {
+        try {
+          const html = await fetchGbk(s, zhjwxkUrl(s, `/${path}&p_xnxq=${sem}&page=${p}`));
+          return parse(html);
+        } catch { return []; }
+      })
+    );
+    let total = 0;
+    for (const items of batch) { all.push(...items); total += items.length; }
+    if (total === 0) break; // empty batch → reached end
   }
   return all;
 }
+
+async function fetchCourseCatalog(s: Session, sem: string) {
+  return fetchPaginated(s, sem, "xkBks.vxkBksJxjhBs.do?m=kkxxSearch", html => parseCatalog(cheerio.load(html)));
+}
+
 async function fetchVolunteer(s: Session, sem: string) {
   const allMap: Record<string, any> = {};
-  for (let p = -1; p <= 200; p++) {
-    const u = p === -1 ? zhjwxkUrl(s, `/xkBks.xkBksZytjb.do?m=tbzySearchBR&p_xnxq=${sem}`) : zhjwxkUrl(s, `/xkBks.xkBksZytjb.do?m=tbzySearchBR&p_xnxq=${sem}&page=${p}`);
-    const html = await fetchGbk(s, u); const batch = parseVolFromHtml(html); if (!Object.keys(batch).length && p >= 0) break;
-    Object.assign(allMap, batch);
-  }
+  // Regular volunteer
   try {
+    const base = "xkBks.xkBksZytjb.do?m=tbzySearchBR";
+    const firstHtml = await fetchGbk(s, zhjwxkUrl(s, `/${base}&p_xnxq=${sem}`));
+    Object.assign(allMap, parseVolFromHtml(firstHtml));
+    for (let start = 0; start <= 200; start += 10) {
+      const batch = await Promise.all(
+        Array.from({ length: 10 }, (_, i) => start + i).map(async p => {
+          try {
+            const html = await fetchGbk(s, zhjwxkUrl(s, `/${base}&p_xnxq=${sem}&page=${p}`));
+            return parseVolFromHtml(html);
+          } catch { return {}; }
+        })
+      );
+      let total = 0;
+      for (const items of batch) { Object.assign(allMap, items); total += Object.keys(items).length; }
+      if (total === 0) break;
+    }
+  } catch { /* ignore */ }
+
+  // Sports volunteer
+  try {
+    const sportsBase = "xkBks.xkBksZytjb.do?m=tbzySearchTy";
+    const firstSports = await fetchGbk(s, zhjwxkUrl(s, `/${sportsBase}&p_xnxq=${sem}`));
     const sportsMap: Record<string, any> = {};
-    for (let p = -1; p <= 20; p++) {
-      const u = p === -1 ? zhjwxkUrl(s, `/xkBks.xkBksZytjb.do?m=tbzySearchTy&p_xnxq=${sem}`) : zhjwxkUrl(s, `/xkBks.xkBksZytjb.do?m=tbzySearchTy&p_xnxq=${sem}&page=${p}`);
-      const html = await fetchGbk(s, u); const batch = parseVolSportsFromHtml(html); if (!Object.keys(batch).length && p >= 0) break;
-      Object.assign(sportsMap, batch);
+    Object.assign(sportsMap, parseVolSportsFromHtml(firstSports));
+    for (let start = 0; start <= 20; start += 10) {
+      const batch = await Promise.all(
+        Array.from({ length: 10 }, (_, i) => start + i).map(async p => {
+          try {
+            const html = await fetchGbk(s, zhjwxkUrl(s, `/${sportsBase}&p_xnxq=${sem}&page=${p}`));
+            return parseVolSportsFromHtml(html);
+          } catch { return {}; }
+        })
+      );
+      let total = 0;
+      for (const items of batch) { Object.assign(sportsMap, items); total += Object.keys(items).length; }
+      if (total === 0) break;
     }
     for (const [key, val] of Object.entries(sportsMap)) { if (allMap[key]) Object.assign(allMap[key], val); else allMap[key] = val; }
   } catch { /* ignore */ }
