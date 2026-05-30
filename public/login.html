@@ -120,6 +120,16 @@ body::before{
 /* spinner */
 .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(124,106,239,.2);border-top-color:#7c6aef;border-radius:50%;animation:sp .6s linear infinite;vertical-align:middle;margin-right:4px}
 @keyframes sp{to{transform:rotate(360deg)}}
+
+@media (max-width: 768px) {
+  .c{width:100%;max-width:100vw;border-radius:0;padding:28px 20px 20px;min-height:100vh;max-height:none;overflow-y:auto}
+  .logo-wrap{margin-bottom:24px}
+  .otp-methods{flex-direction:column;gap:6px}
+  .otp-code-row{flex-direction:column;gap:8px}
+  .otp-code-row button{padding:12px;width:100%}
+  .login-btn{padding:14px;font-size:16px}
+  input{font-size:16px!important;padding:14px!important}
+}
 </style>
 </head>
 <body>

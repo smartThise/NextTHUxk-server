@@ -168,6 +168,20 @@
   </div>
 </div>
 
+<!-- Mobile tab bar -->
+<div class="nx-mobile-tabs">
+  <button class="nx-mobile-tab active" data-panel="left">
+    <span class="nx-mobile-tab-icon">📋</span>课程
+  </button>
+  <button class="nx-mobile-tab" data-panel="right">
+    <span class="nx-mobile-tab-icon">📅</span>课表与工具
+  </button>
+</div>
+
+<script>
+(function(){if(window.innerWidth>768)return;var left=document.querySelector('.nx-left'),right=document.querySelector('.nx-right'),tabs=document.querySelectorAll('.nx-mobile-tab');tabs.forEach(function(t){t.onclick=function(){var p=t.dataset.panel;tabs.forEach(function(b){b.classList.remove('active')});t.classList.add('active');if(p==='left'){left.style.display='';right.classList.remove('mobile-show')}else{left.style.display='none';right.classList.add('mobile-show')}}})})();
+</script>
+
 <!-- JS Modules (load order matters) -->
 <script src="js/config.js"></script>
 <script src="js/probability.js"></script>

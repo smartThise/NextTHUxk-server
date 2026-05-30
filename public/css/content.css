@@ -181,3 +181,59 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text'
 .nx-welcome-field input:focus,.nx-welcome-field select:focus{border-color:#7c6aef;background:#fff;box-shadow:0 0 0 3px rgba(124,106,239,.1)}
 .nx-welcome-btn{width:100%;padding:12px;border-radius:12px;background:linear-gradient(135deg,#7c6aef,#6366f1);color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:transform .15s,box-shadow .15s;box-shadow:0 2px 8px rgba(124,106,239,.25)}
 .nx-welcome-btn:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(124,106,239,.35)}
+
+/* ═══════════════ Mobile Responsive (< 768px) ═══════════════ */
+@media (max-width: 768px) {
+  .nx-header{padding:10px 12px;flex-wrap:wrap;gap:6px}
+  .nx-logo{font-size:14px}
+  .nx-header-btns{flex-wrap:wrap;gap:4px}
+  .nx-header-btns button{font-size:10px;padding:4px 8px}
+
+  .nx-main{flex-direction:column;height:auto;overflow:visible}
+  .nx-left,.nx-right{width:100%!important;border-right:none;overflow:visible}
+  .nx-left{min-height:100vh}
+  .nx-right{display:none}
+  .nx-right.mobile-show{display:block}
+
+  .nx-search-bar{padding:8px 10px}
+  .nx-search{font-size:16px;padding:10px 40px 10px 12px}
+  .nx-filters{flex-wrap:nowrap;overflow-x:auto;gap:4px;-webkit-overflow-scrolling:touch}
+  .nx-filters::-webkit-scrollbar{display:none}
+  .nx-chip{padding:4px 10px;font-size:11px;white-space:nowrap;flex-shrink:0}
+
+  .nx-list{padding:8px 6px;gap:6px}
+  .nx-card{padding:10px 12px;border-radius:10px}
+  .nx-card-name{font-size:13px}
+  .nx-card-actions{gap:3px;flex-wrap:wrap}
+  .nx-detail-btn,.nx-select-btn,.nx-drop-btn{font-size:10px;padding:3px 8px}
+  .nx-zy-select,.nx-type-select{font-size:10px;padding:3px 6px}
+  .nx-inline-prob{font-size:10px;min-width:36px}
+
+  .nx-sec{padding:12px 10px}
+  .nx-sec-title{font-size:14px}
+
+  .nx-tt td,.nx-tt th{font-size:9px;padding:3px 1px}
+  .nx-tt-text{font-size:8px}
+  .nx-tt-prob{font-size:7px;padding:1px 4px}
+
+  .nx-modal{width:96vw;max-height:90vh;border-radius:12px}
+  .nx-modal-body{padding:12px 16px}
+  .nx-modal-row{flex-direction:column;margin-bottom:8px}
+  .nx-modal-label{width:auto;text-align:left;padding-right:0;margin-bottom:2px}
+
+  .nx-plans{flex-wrap:nowrap;overflow-x:auto}
+  .nx-plan-card{min-width:90px;flex-shrink:0}
+
+  .nx-stage-item{font-size:11px}
+  .nx-draft-acts button{font-size:9px;padding:2px 8px}
+}
+
+/* Mobile tab bar */
+.nx-mobile-tabs{display:none}
+@media (max-width: 768px) {
+  .nx-mobile-tabs{display:flex;position:fixed;bottom:0;left:0;right:0;background:rgba(255,255,255,.95);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid rgba(0,0,0,.08);z-index:100;padding:6px 0 env(safe-area-inset-bottom,0)}
+  .nx-mobile-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 4px;border:none;background:none;color:#86868b;font-size:10px;font-family:inherit;cursor:pointer;gap:2px;transition:color .15s}
+  .nx-mobile-tab.active{color:#7c6aef}
+  .nx-mobile-tab-icon{font-size:20px}
+  .nx-main{margin-bottom:56px}
+}
