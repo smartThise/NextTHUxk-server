@@ -245,7 +245,7 @@ async function launch(){
     // Merge
     var courses=catalog.length?catalog:plan.map(function(c){return Object.assign({},c,{available:true,teacher:'',time:'',capacity:'',selected:false,queue:''})});
     // Merge volunteer
-    if(Object.keys(volData).length){courses.forEach(function(c){var key=c.seq?c.code+'_'++c.seq:null;var v=key&&volData[key]?volData[key]:Object.values(volData).find(function(v){return v.code===c.code});if(v){c.volRequired=v.volRequired;c.volElective=v.volElective;c.volOptional=v.volOptional;c.volSports=v.volSports||'';c.volCapacity=v.capacity||c.capacity;c.volApplied=v.applied||0;if((isSports(c))&&v.volSports){c.volApplied=v.applied||0;c.volCapacity=v.capacity||c.volCapacity}}})}
+    if(Object.keys(volData).length){courses.forEach(function(c){var key=c.seq?c.code+'_'+c.seq:null;var v=key&&volData[key]?volData[key]:Object.values(volData).find(function(v){return v.code===c.code});if(v){c.volRequired=v.volRequired;c.volElective=v.volElective;c.volOptional=v.volOptional;c.volSports=v.volSports||'';c.volCapacity=v.capacity||c.capacity;c.volApplied=v.applied||0;if((isSports(c))&&v.volSports){c.volApplied=v.applied||0;c.volCapacity=v.capacity||c.volCapacity}}})}
     if(plan.length){var pm={};plan.forEach(function(p){pm[p.code]=p.attr});courses.forEach(function(c){if(!c.attr&&pm[c.code])c.attr=pm[c.code]})}
     // Resolve selected
     var selMap={};sel.forEach(function(s){selMap[s.code+'_'+s.seq]=s});
