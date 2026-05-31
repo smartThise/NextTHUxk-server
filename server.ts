@@ -294,14 +294,17 @@ async function fetchTrainingPlan(s: Session, sem: string) {
 // 并发翻页通用函数
 async function fetchPaginated(s: Session, sem: string, path: string, parse: (html: string) => any[], batchSize = 10) {
   const all: any[] = [];
-  // Page -1 first (index page, no page param)
+  const seen = new Set<string>();
+
+  // Page -1 first (index page, no page param) — this is page 0 in zhjwxk
   try {
     const html = await fetchGbk(s, zhjwxkUrl(s, `/${path}&p_xnxq=${sem}`));
-    all.push(...parse(html));
+    const items = parse(html);
+    items.forEach((it: any) => { const k = (it.code || '') + '_' + (it.seq || it.kxh || '0'); if (!seen.has(k)) { seen.add(k); all.push(it); } });
   } catch { return all; }
 
-  // Parallel batches
-  for (let start = 1; start <= 200; start += batchSize) {
+  // Parallel batches — start from page 0 to match extension's pagination
+  for (let start = 0; start <= 200; start += batchSize) {
     const batch = await Promise.all(
       Array.from({ length: batchSize }, (_, i) => start + i).map(async p => {
         try {
@@ -311,9 +314,15 @@ async function fetchPaginated(s: Session, sem: string, path: string, parse: (htm
       })
     );
     let total = 0;
-    for (const items of batch) { all.push(...items); total += items.length; }
+    for (const items of batch) {
+      for (const it of items) {
+        const k = (it.code || '') + '_' + (it.seq || it.kxh || '0');
+        if (!seen.has(k)) { seen.add(k); all.push(it); total++; }
+      }
+    }
     if (total === 0) break; // empty batch → reached end
   }
+  console.log(`  [fetchPaginated] total (deduped): ${all.length}`);
   return all;
 }
 

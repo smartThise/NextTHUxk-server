@@ -126,6 +126,15 @@ NX.mergeStaticData = function (catalog, volData, plan) {
     return Object.assign({}, c, { available: true, teacher: '', time: '', capacity: '', selected: false, queue: '' });
   });
 
+  // Deduplicate by code+seq (parallel pagination can produce overlapping pages)
+  var seen = {};
+  courses = courses.filter(function (c) {
+    var key = c.code + '_' + (c.seq || '0');
+    if (seen[key]) return false;
+    seen[key] = true;
+    return true;
+  });
+
   if (Object.keys(volData).length) {
     courses.forEach(function (c) {
       var key = c.seq ? c.code + '_' + c.seq : null;
