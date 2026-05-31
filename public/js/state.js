@@ -373,10 +373,12 @@ NX.refreshSelected = async function () {
 NX.handlePreviewRemove = async function (code, seq) {
   var state = NX.state;
   if (state.previewMode === 'selected') {
-    var c = state.allCourses.find(function (x) { return x.code === code && String(x.seq || '0') === String(seq); });
+    var c = state.allCourses.find(function (x) { return x.code === code && String(x.seq || '0') === String(seq); })
+      || state.candidateCourses.find(function (x) { return x.code === code && String(x.seq || '0') === String(seq); });
     var name = c ? c.name : code;
-    if (!confirm('确认退选「' + name + '」？')) return;
-    var res = await NX.dropCourse(state.SEM, code, seq, false);
+    var isQueue = state.candidateCourses.some(function (x) { return x.code === code && String(x.seq || '0') === String(seq || '0'); });
+    if (!confirm(isQueue ? '确认退出「' + name + '」的候补队列？' : '确认退选「' + name + '」？')) return;
+    var res = await NX.dropCourse(state.SEM, code, seq, isQueue);
     NX.showXkResult(res);
     if (res.ok) await NX.launch();
   } else if (state.previewMode === 'stage') {

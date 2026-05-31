@@ -170,8 +170,20 @@ body::before{
 </div>
 
 <script>
-var _mi=-1;
+var _mi=-1,_mt="";
+
 function $(i){return document.getElementById(i)}
+function isTotp(){return _mt==="totp"}
+async function sendCode(){
+  if(_mi<0||isTotp()) return;
+  $("st").className="st loading";
+  $("st").innerHTML="<span class=\\"spin\\"></span> 正在发送验证码…";
+  try{
+    await fetch("/api/2fa/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({methodIdx:_mi})});
+    $("st").className="st ok";$("st").textContent="✅ 验证码已发送，请查收";
+    $("otpCode").focus();
+  }catch(e){$("st").className="st err";$("st").textContent="❌ 发送失败，请重试"}
+}
 
 function addLog(msg){
   var d=document.createElement('div');
@@ -228,7 +240,7 @@ function poll(){
             btn.onclick=function(){
               document.querySelectorAll('.otp-method').forEach(function(b){b.classList.remove('sel')});
               btn.classList.add('sel');
-              _mi=i;
+              _mi=i;_mt=iconKey;if(!isTotp())sendCode();
               $('otpDesc').textContent='已选择「'+m+'」，验证码将发送到您的设备';
               $('otpCode').focus();
             };

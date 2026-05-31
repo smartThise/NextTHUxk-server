@@ -206,12 +206,21 @@ async function handle2FAResponse(s: Session) {
   s.pending2FA = { methods, methodKeys };
   s.loginState = "need_2fa";  // 在 pending2FA 就绪后再设，避免前端拿到空 methods
 }
+async function send2FACode(s: Session, methodIdx: number) {
+  if (!s.pending2FA) throw new Error("无 2FA 会话");
+  const method = s.pending2FA.methodKeys[methodIdx];
+  if (method === "totp") { sLog(s, "TOTP 无需发送验证码"); return; }
+  const r = JSON.parse(await postForm(s, DOUBLE_AUTH, { action: "SEND_CODE", type: method }));
+  if (r.result !== "success") throw new Error(r.msg || "发送验证码失败");
+  sLog(s, "验证码已发送 (" + method + ")");
+}
+
 async function continue2FA(s: Session, methodIdx: number, code: string) {
   if (!s.pending2FA) return;
   try {
     const method = s.pending2FA.methodKeys[methodIdx];
-    await postForm(s, DOUBLE_AUTH, { action: "SEND_CODE", type: method }); sLog(s, "验证码已发送");
-    const r3 = JSON.parse(await postForm(s, DOUBLE_AUTH, { action: method === "totp" ? "VERITY_TOTP_CODE" : "VERITY_CODE", vericode: code }));
+    const action = method === "totp" ? "VERITY_TOTP_CODE" : "VERITY_CODE";
+    const r3 = JSON.parse(await postForm(s, DOUBLE_AUTH, { action, vericode: code }));
     if (r3.result !== "success") throw new Error("验证失败: " + r3.msg);
     sLog(s, "2FA 通过");
     await postForm(s, SAVE_FINGER, { fingerprint: s.finger, deviceName: "THU-Local-Proxy", radioVal: "是" });
@@ -554,6 +563,7 @@ const server = http.createServer(async (req, res) => {
 
   // Auth API
   if (pathname === "/api/login" && req.method === "POST") { const b = JSON.parse(await readBody(req)); await doLogin(s, b.userId, b.password); json(res, s, { ok: true }); return; }
+  if (pathname === "/api/2fa/send" && req.method === "POST") { const b = JSON.parse(await readBody(req)); await send2FACode(s, b.methodIdx); json(res, s, { ok: true }); return; }
   if (pathname === "/api/2fa" && req.method === "POST") { const b = JSON.parse(await readBody(req)); await continue2FA(s, b.methodIdx, b.code); json(res, s, { ok: true }); return; }
   if (pathname === "/api/status") { json(res, s, { state: s.loginState, error: s.loginError, progress: s.loginProgress, need2fa: s.loginState === "need_2fa", methods: s.pending2FA?.methods || [] }); return; }
   if (pathname === "/api/logout" && req.method === "POST") {

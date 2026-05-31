@@ -331,7 +331,7 @@ NX.renderPreviewTT = function (courses, label) {
       if (val) {
         var isC = val.conflict;
         var items = isC ? val.items : [val];
-        var btns = items.map(function (it) { return '<span class="nx-tt-rm" data-code="' + NX.esc(it.code) + '" data-seq="' + NX.esc(it.seq) + '" title="移除 ' + NX.esc(it.label) + '">✕</span>'; }).join('');
+        var btns = isC ? '' : items.map(function (it) { return '<span class="nx-tt-rm" data-code="' + NX.esc(it.code) + '" data-seq="' + NX.esc(it.seq) + '" title="移除 ' + NX.esc(it.label) + '">✕</span>'; }).join('');
         var linesHtml = items.map(function (it) {
           var probHtml = it.probLabel ? '<span class="nx-tt-prob" style="background:' + it.probBgColor + ';color:' + it.color + '">' + it.probLabel + '</span>' : '';
           return '<div class="nx-tt-line"><span class="nx-tt-text">' + NX.esc(it.label) + '</span>' + probHtml + '</div>';
