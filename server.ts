@@ -604,7 +604,7 @@ const server = http.createServer(async (req, res) => {
           globalCache = { sem, plan, catalog, volunteer: volData, ts: Date.now() };
         }
         console.log(`  [init] plan=${plan.length} catalog=${catalog.length} volData=${Object.keys(volData).length} selected=${selected.length} queue=${Object.keys(qResult.map).length} candidates=${candidates.length}`);
-        json(res, s, { plan, catalog, volunteer: volData, selected, queueMap: qResult.map, queuePhase: qResult.phase, candidates }); return;
+        json(res, s, { plan, catalog, volunteer: volData, selected, queueMap: qResult.map, queuePhase: qResult.phase, candidates, volTs: globalCache?.ts || 0 }); return;
       }
       if (pathname === "/api/plan") { json(res, s, await fetchTrainingPlan(s, sem)); return; }
       if (pathname === "/api/courses") { json(res, s, globalCache && globalCache.sem === sem ? globalCache.catalog : await fetchCourseCatalog(s, sem)); return; }

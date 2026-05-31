@@ -92,12 +92,14 @@
         state.queueDataMap = d.queueMap;
         state.isQueuePhase = d.queuePhase;
         state.candidateCourses = d.candidates;
+        state.volTs = d.volTs;
         state.allCourses = NX.mergeStaticData(catalog, volData, plan);
         NX.store.set('coursesCache', { sem: state.SEM, courses: state.allCourses, plan: plan, ts: Date.now() });
         var selectedForZy = d.selected;
       } else {
         // Cache hit: use cached courses, fetch only per-user data
         console.log('[NextTHUxk] using cached', coursesCache.courses.length, 'courses');
+        state.volTs = coursesCache.ts || 0;
         state.allCourses = coursesCache.courses;
         // Deduplicate in case cache was saved before dedup was added
         var dedup = {};
@@ -177,6 +179,27 @@
       }
       var qRefreshBtn = document.getElementById('refresh-queue-btn');
       if (qRefreshBtn) qRefreshBtn.style.display = (state.isQueuePhase || state.candidateCourses.length) ? 'inline-block' : 'none';
+
+      // 8.5 预选阶段：志愿数据超过 2h 提醒刷新（课余量模式不提醒）
+      if (!state.isQueuePhase && state.volTs) {
+        var volAge = Date.now() - state.volTs;
+        var staleH = 2; // 2 hours
+        if (volAge > staleH * 3600000) {
+          var staleBanner = document.getElementById('vol-stale-banner');
+          if (!staleBanner) {
+            staleBanner = document.createElement('div');
+            staleBanner.id = 'vol-stale-banner';
+            staleBanner.style.cssText = 'margin:0 0 12px 0;padding:10px 16px;background:rgba(255,149,0,.12);border:1px solid rgba(255,149,0,.3);border-radius:10px;display:flex;align-items:center;justify-content:space-between;gap:8px';
+            staleBanner.innerHTML = '<span style="font-size:13px;color:#ff9500">⚠ 志愿数据已超过' + staleH + '小时未刷新，数据可能已过时</span><button id="vol-stale-refresh" style="padding:6px 14px;border-radius:8px;border:none;background:#ff9500;color:#fff;font-size:12px;cursor:pointer;font-weight:600;white-space:nowrap">🔄 刷新志愿数据</button>';
+            var listEl2 = document.getElementById('list');
+            if (listEl2 && listEl2.parentNode) listEl2.parentNode.insertBefore(staleBanner, listEl2);
+            document.getElementById('vol-stale-refresh').onclick = function () {
+              staleBanner.remove();
+              NX.launch(true);
+            };
+          }
+        }
+      }
 
       // 9. Load AI config
       var cfg = NX.store.get('config');
