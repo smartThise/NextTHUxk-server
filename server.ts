@@ -584,7 +584,11 @@ const server = http.createServer(async (req, res) => {
   if (pathname === "/app") { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(APP_HTML); return; }
 
   // Auth API
-  if (pathname === "/api/login" && req.method === "POST") { const b = JSON.parse(await readBody(req)); await doLogin(s, b.userId, b.password); json(res, s, { ok: true }); return; }
+  if (pathname === "/api/login" && req.method === "POST") {
+    if (s.loginState === "done") { json(res, s, { ok: true }); return; }
+    if (s.loginState === "logging_in" || s.loginState === "need_2fa") { json(res, s, { ok: true }); return; }
+    const b = JSON.parse(await readBody(req)); await doLogin(s, b.userId, b.password); json(res, s, { ok: true }); return;
+  }
   if (pathname === "/api/2fa/send" && req.method === "POST") { const b = JSON.parse(await readBody(req)); await send2FACode(s, b.methodIdx); json(res, s, { ok: true }); return; }
   if (pathname === "/api/2fa" && req.method === "POST") { const b = JSON.parse(await readBody(req)); await continue2FA(s, b.methodIdx, b.code); json(res, s, { ok: true }); return; }
   if (pathname === "/api/status") { json(res, s, { state: s.loginState, error: s.loginError, progress: s.loginProgress, need2fa: s.loginState === "need_2fa", methods: s.pending2FA?.methods || [] }); return; }
