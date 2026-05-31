@@ -80,46 +80,35 @@
     try {
       var t0 = Date.now();
 
-      // 1. Check localStorage cache (extension-style staticData)
-      var coursesCache = forceRefresh ? null : NX.store.get('coursesCache');
-      var needFetch = !coursesCache || coursesCache.sem !== state.SEM || !coursesCache.courses || !coursesCache.courses.length;
+      // ── 课程数据：localStorage 有就直接用，只有点"刷新数据"才重新爬 ──
+      var coursesCache = NX.store.get('coursesCache');
+      var cacheValid = coursesCache && coursesCache.sem === state.SEM && coursesCache.courses && coursesCache.courses.length;
 
-      var plan, catalog, volData, selectedForZy;
-      if (needFetch) {
-        // Full fetch: get everything from server
-        var d = await NX.fetchInitData(state.SEM, !!forceRefresh);
-        plan = d.plan; catalog = d.catalog; volData = d.volunteer;
+      var plan, selectedForZy;
+      if (forceRefresh || !cacheValid) {
+        // 全量抓取
+        var d = await NX.fetchInitData(state.SEM, true);
+        plan = d.plan;
+        state.allCourses = NX.mergeStaticData(d.catalog, d.volunteer, plan);
         state.queueDataMap = d.queueMap;
         state.isQueuePhase = d.queuePhase;
         state.candidateCourses = d.candidates;
-        state.volTs = d.volTs;
-        state.allCourses = NX.mergeStaticData(catalog, volData, plan);
+        state.volTs = Date.now();
+        selectedForZy = d.selected;
         NX.store.set('coursesCache', { sem: state.SEM, courses: state.allCourses, plan: plan, ts: Date.now() });
-        var selectedForZy = d.selected;
+        console.log('[NextTHUxk] full fetch done, cached', state.allCourses.length, 'courses');
       } else {
-        // Cache hit: use cached courses, fetch only per-user data
-        console.log('[NextTHUxk] using cached', coursesCache.courses.length, 'courses');
-        state.volTs = coursesCache.ts || 0;
+        // 本地缓存命中：课程数据直接读 localStorage
+        console.log('[NextTHUxk] localStorage hit,', coursesCache.courses.length, 'courses');
         state.allCourses = coursesCache.courses;
-        // Deduplicate in case cache was saved before dedup was added
-        var dedup = {};
-        state.allCourses = state.allCourses.filter(function (c) {
-          var k = NX.keyOf(c);
-          if (dedup[k]) return false;
-          dedup[k] = true;
-          return true;
-        });
-        if (dedup) { /* just referenced */ }
-        // Update cache if duplicates were removed
-        if (state.allCourses.length !== coursesCache.courses.length) {
-          NX.store.set('coursesCache', { sem: state.SEM, courses: state.allCourses, plan: coursesCache.plan, ts: coursesCache.ts });
-        }
         plan = coursesCache.plan || [];
+        state.volTs = coursesCache.ts || 0;
+        // 用户数据仍然实时拉取（串行，不并发）
         var q = await NX.fetchQueue(state.SEM).catch(function () { return { map: {}, phase: false }; });
         state.queueDataMap = q.map;
         state.isQueuePhase = q.phase;
         state.candidateCourses = await NX.fetchCandidates(state.SEM).catch(function () { return []; });
-        var selectedForZy = await NX.fetchSelected(state.SEM).catch(function () { return []; });
+        selectedForZy = await NX.fetchSelected(state.SEM).catch(function () { return []; });
       }
       state.planData = plan;
 

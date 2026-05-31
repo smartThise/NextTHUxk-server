@@ -37,7 +37,6 @@ NX.fetchInitData = async function (sem, forceRefresh) {
     queueMap: d.queueMap || {},
     queuePhase: !!d.queuePhase,
     candidates: d.candidates || [],
-    volTs: d.volTs || 0,
   };
 };
 
