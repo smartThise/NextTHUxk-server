@@ -17,7 +17,13 @@ NX.parseTimeSlots = function (timeStr) {
     var dayNum = parseInt(m[1]);
     var dajie = parseInt(m[2]);
     if (dayNum >= 1 && dayNum <= 7 && dajie >= 1 && dajie <= 6) {
-      slots.push({ day: dayLabels[dayNum - 1], slot: slotLabels[dajie - 1] });
+      var day = dayLabels[dayNum - 1];
+      var slot = slotLabels[dajie - 1];
+      // Deduplicate: split time ranges (e.g. "1-2(1-8周),1-2(9-16周)")
+      // produce identical day+slot entries — keep only the first
+      if (!slots.some(function (s) { return s.day === day && s.slot === slot; })) {
+        slots.push({ day: day, slot: slot });
+      }
     }
   }
   return slots;
