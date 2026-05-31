@@ -129,7 +129,7 @@ NX.mergeStaticData = function (catalog, volData, plan) {
   // Deduplicate by code+seq (parallel pagination can produce overlapping pages)
   var seen = {};
   courses = courses.filter(function (c) {
-    var key = c.code + '_' + (c.seq || '0');
+    var key = NX.keyOf(c);
     if (seen[key]) return false;
     seen[key] = true;
     return true;

@@ -41,6 +41,10 @@ NX.esc = function (s) {
     .replace(/"/g, '&quot;');
 };
 
+// Normalize seq to integer (handles "01" vs "1" discrepancy between WebVPN sources)
+NX.keyOf = function (c) { return c.code + '_' + (parseInt(c.seq, 10) || 0); };
+NX.seqOf = function (s) { return String(parseInt(s, 10) || 0); };
+
 // ─── Storage (localStorage wrapper) ─────────────────────────────
 NX.store = {
   get: function (k) {

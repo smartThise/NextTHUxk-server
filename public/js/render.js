@@ -274,7 +274,7 @@ NX.renderPreviewTT = function (courses, label) {
   // Final dedup: ensure no duplicate code+seq entries (defense in depth)
   var dedupSeen = {};
   courses = courses.filter(function (c) {
-    var k = c.code + '_' + (c.seq || '0');
+    var k = NX.keyOf(c);
     if (dedupSeen[k]) return false;
     dedupSeen[k] = true;
     return true;
@@ -312,7 +312,7 @@ NX.renderPreviewTT = function (courses, label) {
         var old = tt[s.day][s.slot];
         var existing = old.conflict ? old.items : [old];
         // Same course (code+seq) in same slot? Skip — it's a split time range, not a conflict
-        if (existing.some(function (e) { return e.code === entry.code && e.seq === entry.seq; })) return;
+        if (existing.some(function (e) { return e.code === entry.code && NX.seqOf(e.seq) === NX.seqOf(entry.seq); })) return;
         var labels = existing.concat(entry);
         tt[s.day][s.slot] = { label: labels.map(function (e) { return e.label; }).join(' / '), conflict: true, items: labels };
       } else tt[s.day][s.slot] = entry;
@@ -659,10 +659,10 @@ NX.filterCourses = function () {
   if (f === 'available') list = list.filter(function (c) { return c.available; });
   else if (f === 'selected') {
     var seen = new Set();
-    var candKeys = new Set(state.candidateCourses.map(function (c) { return c.code + '_' + (c.seq || '0'); }));
+    var candKeys = new Set(state.candidateCourses.map(function (c) { return NX.keyOf(c); }));
     list = list.filter(function (c) {
-      if (!c.selected && !c.isCandidate && !candKeys.has(c.code + '_' + (c.seq || '0'))) return false;
-      var k = c.code + '_' + (c.seq || '0');
+      if (!c.selected && !c.isCandidate && !candKeys.has(NX.keyOf(c))) return false;
+      var k = NX.keyOf(c);
       if (seen.has(k)) return false;
       seen.add(k); return true;
     });
@@ -670,8 +670,8 @@ NX.filterCourses = function () {
   else if (f === 'elective') list = list.filter(function (c) { return c.attr === '限选'; });
   else if (f === 'sports') list = list.filter(function (c) { return c.attr === '体育' || (c.department || '').includes('体育') || (c.department || '').includes('体武'); });
   else if (f === 'queue') {
-    var qKeys = new Set(state.candidateCourses.map(function (c) { return c.code + '_' + (c.seq || '0'); }));
-    list = list.filter(function (c) { return qKeys.has(c.code + '_' + (c.seq || '0')); });
+    var qKeys = new Set(state.candidateCourses.map(function (c) { return NX.keyOf(c); }));
+    list = list.filter(function (c) { return qKeys.has(NX.keyOf(c)); });
   }
   if (state.activeGroup) list = list.filter(function (c) { return (c.group || c.attr) === state.activeGroup; });
 

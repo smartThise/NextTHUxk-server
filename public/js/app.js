@@ -102,7 +102,7 @@
         // Deduplicate in case cache was saved before dedup was added
         var dedup = {};
         state.allCourses = state.allCourses.filter(function (c) {
-          var k = c.code + '_' + (c.seq || '0');
+          var k = NX.keyOf(c);
           if (dedup[k]) return false;
           dedup[k] = true;
           return true;
@@ -123,13 +123,13 @@
 
       // 2. Mark candidate courses
       if (state.candidateCourses.length) {
-        var candCodes = new Set(state.candidateCourses.map(function (c) { return c.code; }));
-        state.allCourses.forEach(function (c) { if (candCodes.has(c.code)) c.isCandidate = true; });
+        var candCodes = new Set(state.candidateCourses.map(function (c) { return NX.keyOf(c); }));
+        state.allCourses.forEach(function (c) { if (candCodes.has(NX.keyOf(c))) c.isCandidate = true; });
       }
 
       // 3. Resolve ZY
       var selMap = {};
-      selectedForZy.forEach(function (s) { selMap[s.code + '_' + (s.seq || '0')] = s; });
+      selectedForZy.forEach(function (s) { selMap[NX.keyOf(s)] = s; });
       var zyCache = NX.store.get('zyCache') || {};
       var cacheUpdated = await NX.resolveCourseZy(state.allCourses, selMap, zyCache);
       if (cacheUpdated) NX.store.set('zyCache', zyCache);
@@ -155,7 +155,7 @@
       NX.renderPlan(plan);
       NX.renderPreviewTT(
         state.allCourses.filter(function (c) { return c.selected; }).concat(
-          state.candidateCourses.filter(function (cc) { return !state.allCourses.some(function (ac) { return ac.selected && ac.code === cc.code && String(ac.seq || '0') === String(cc.seq || '0'); }); })
+          state.candidateCourses.filter(function (cc) { return !state.allCourses.some(function (ac) { return ac.selected && NX.keyOf(ac) === NX.keyOf(cc); }); })
         ),
         '当前已选'
       );
@@ -238,7 +238,7 @@
     NX.filterCourses();
     NX.renderPreviewTT(
       NX.state.allCourses.filter(function (c) { return c.selected; }).concat(
-        NX.state.candidateCourses.filter(function (cc) { return !NX.state.allCourses.some(function (ac) { return ac.selected && ac.code === cc.code && String(ac.seq || '0') === String(cc.seq || '0'); }); })
+        NX.state.candidateCourses.filter(function (cc) { return !NX.state.allCourses.some(function (ac) { return ac.selected && NX.keyOf(ac) === NX.keyOf(cc); }); })
       ),
       '当前已选'
     );
@@ -303,7 +303,7 @@
   document.getElementById('preview-reset').onclick = function () {
     NX.renderPreviewTT(
       NX.state.allCourses.filter(function (c) { return c.selected; }).concat(
-        NX.state.candidateCourses.filter(function (cc) { return !NX.state.allCourses.some(function (ac) { return ac.selected && ac.code === cc.code && String(ac.seq || '0') === String(cc.seq || '0'); }); })
+        NX.state.candidateCourses.filter(function (cc) { return !NX.state.allCourses.some(function (ac) { return ac.selected && NX.keyOf(ac) === NX.keyOf(cc); }); })
       ),
       '当前已选'
     );
