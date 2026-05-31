@@ -99,6 +99,19 @@
         // Cache hit: use cached courses, fetch only per-user data
         console.log('[NextTHUxk] using cached', coursesCache.courses.length, 'courses');
         state.allCourses = coursesCache.courses;
+        // Deduplicate in case cache was saved before dedup was added
+        var dedup = {};
+        state.allCourses = state.allCourses.filter(function (c) {
+          var k = c.code + '_' + (c.seq || '0');
+          if (dedup[k]) return false;
+          dedup[k] = true;
+          return true;
+        });
+        if (dedup) { /* just referenced */ }
+        // Update cache if duplicates were removed
+        if (state.allCourses.length !== coursesCache.courses.length) {
+          NX.store.set('coursesCache', { sem: state.SEM, courses: state.allCourses, plan: coursesCache.plan, ts: coursesCache.ts });
+        }
         plan = coursesCache.plan || [];
         var q = await NX.fetchQueue(state.SEM).catch(function () { return { map: {}, phase: false }; });
         state.queueDataMap = q.map;

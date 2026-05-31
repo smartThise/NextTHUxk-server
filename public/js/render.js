@@ -271,6 +271,15 @@ NX.renderPreviewTT = function (courses, label) {
   if (label && label.startsWith('草稿「')) state.previewMode = 'draft';
   if (!courses.length) { el.innerHTML = '<div class="nx-st">暂无课程</div>'; return; }
 
+  // Final dedup: ensure no duplicate code+seq entries (defense in depth)
+  var dedupSeen = {};
+  courses = courses.filter(function (c) {
+    var k = c.code + '_' + (c.seq || '0');
+    if (dedupSeen[k]) return false;
+    dedupSeen[k] = true;
+    return true;
+  });
+
   var tt = {};
   courses.forEach(function (c, ci) {
     var lbl = c.teacher ? c.name + '(' + c.teacher + ')' : c.name;
