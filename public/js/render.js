@@ -310,7 +310,10 @@ NX.renderPreviewTT = function (courses, label) {
       var entry = { label: lbl, ci: ci, code: c.code, seq: c.seq || '0', color: cellColor, probLabel: probLabel, probBgColor: probBgColor };
       if (tt[s.day][s.slot]) {
         var old = tt[s.day][s.slot];
-        var labels = (old.conflict ? old.items : [old]).concat(entry);
+        var existing = old.conflict ? old.items : [old];
+        // Same course (code+seq) in same slot? Skip — it's a split time range, not a conflict
+        if (existing.some(function (e) { return e.code === entry.code && e.seq === entry.seq; })) return;
+        var labels = existing.concat(entry);
         tt[s.day][s.slot] = { label: labels.map(function (e) { return e.label; }).join(' / '), conflict: true, items: labels };
       } else tt[s.day][s.slot] = entry;
     });
