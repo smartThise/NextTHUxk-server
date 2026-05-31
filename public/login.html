@@ -170,149 +170,159 @@ body::before{
 </div>
 
 <script>
-var _mi=-1,_mt="";
+var _mi = -1, _mt = '';
+function $(i) { return document.getElementById(i); }
+function isTotp() { return _mt === 'totp'; }
 
-function $(i){return document.getElementById(i)}
-function isTotp(){return _mt==="totp"}
-async function sendCode(){
-  if(_mi<0||isTotp()) return;
-  $("st").className="st loading";
-  $("st").innerHTML="<span class=\\"spin\\"></span> 正在发送验证码…";
-  try{
-    await fetch("/api/2fa/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({methodIdx:_mi})});
-    $("st").className="st ok";$("st").textContent="✅ 验证码已发送，请查收";
-    $("otpCode").focus();
-  }catch(e){$("st").className="st err";$("st").textContent="❌ 发送失败，请重试"}
+async function sendCode() {
+  if (_mi < 0 || isTotp()) return;
+  $('st').className = 'st loading';
+  $('st').innerHTML = '<span class="spin"></span> 正在发送验证码…';
+  try {
+    await fetch('/api/2fa/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ methodIdx: _mi })
+    });
+    $('st').className = 'st ok';
+    $('st').textContent = '✅ 验证码已发送，请查收';
+    $('otpCode').focus();
+  } catch (e) {
+    $('st').className = 'st err';
+    $('st').textContent = '❌ 发送失败，请重试';
+  }
 }
 
-function addLog(msg){
-  var d=document.createElement('div');
-  d.textContent=msg;
+function addLog(msg) {
+  var d = document.createElement('div');
+  d.textContent = msg;
   $('log').appendChild(d);
-  $('log').scrollTop=$('log').scrollHeight;
+  $('log').scrollTop = $('log').scrollHeight;
 }
 
-function poll(){
-  var t=setInterval(function(){
-    fetch('/api/status').then(function(r){return r.json()}).then(function(d){
-      // 追加日志（增量）
-      var curLog=$('log').querySelectorAll('div').length;
-      for(var i=curLog;i<d.progress.length;i++){
+function poll() {
+  var t = setInterval(function () {
+    fetch('/api/status').then(function (r) { return r.json(); }).then(function (d) {
+      var curLog = $('log').querySelectorAll('div').length;
+      for (var i = curLog; i < d.progress.length; i++) {
         addLog(d.progress[i]);
       }
-      if(d.state==='done'){
+      if (d.state === 'done') {
         clearInterval(t);
-        $('st').className='st ok';
-        $('st').innerHTML='✅ 登录成功！即将跳转…';
-        $('btn').disabled=false;
+        $('st').className = 'st ok';
+        $('st').innerHTML = '✅ 登录成功！即将跳转…';
+        $('btn').disabled = false;
         $('otp').classList.remove('on');
-        setTimeout(function(){location.href='/app'},600);
-      }else if(d.state==='error'){
+        setTimeout(function () { location.href = '/app'; }, 600);
+      } else if (d.state === 'error') {
         clearInterval(t);
-        $('st').className='st err';
-        $('st').textContent='❌ '+d.error;
-        $('btn').disabled=false;
+        $('st').className = 'st err';
+        $('st').textContent = '❌ ' + d.error;
+        $('btn').disabled = false;
         $('otp').classList.remove('on');
-      }else if(d.state==='need_2fa'){
-        if(!d.methods||!d.methods.length){
-          $('st').className='st loading';
-          $('st').innerHTML='<span class="spin"></span> 需要二次认证…';
-          return;  // methods 还没就绪，继续轮询
+      } else if (d.state === 'need_2fa') {
+        if (!d.methods || !d.methods.length) {
+          $('st').className = 'st loading';
+          $('st').innerHTML = '<span class="spin"></span> 需要二次认证…';
+          return;
         }
         clearInterval(t);
-        $('st').className='st loading';
-        $('st').innerHTML='<span class="spin"></span> 需要二次认证';
-        if(d.methods&&d.methods.length>0){
+        $('st').className = 'st loading';
+        $('st').innerHTML = '<span class="spin"></span> 需要二次认证';
+        if (d.methods && d.methods.length > 0) {
           $('otp').classList.add('on');
-          $('otpM').innerHTML='';
-          _mi=-1;
-          var icons={wechat:'💬',mobile:'📱',totp:'🔢'};
-          d.methods.forEach(function(m,i){
-            var btn=document.createElement('button');
-            btn.className='otp-method';
-            btn.type='button';
-            // 尝试判断类型显示图标
-            var iconKey='';
-            if(m.includes('微信'))iconKey='wechat';
-            else if(m.includes('手机'))iconKey='mobile';
-            else iconKey='totp';
-            btn.innerHTML=(icons[iconKey]||'🔑')+'<br>'+m;
-            btn.onclick=function(){
-              document.querySelectorAll('.otp-method').forEach(function(b){b.classList.remove('sel')});
+          $('otpM').innerHTML = '';
+          _mi = -1; _mt = '';
+          var icons = { wechat: '💬', mobile: '📱', totp: '🔢' };
+          d.methods.forEach(function (m, i) {
+            var btn = document.createElement('button');
+            btn.className = 'otp-method';
+            btn.type = 'button';
+            var iconKey = '';
+            if (m.includes('微信')) iconKey = 'wechat';
+            else if (m.includes('手机')) iconKey = 'mobile';
+            else iconKey = 'totp';
+            btn.innerHTML = (icons[iconKey] || '🔑') + '<br>' + m;
+            btn.onclick = function () {
+              document.querySelectorAll('.otp-method').forEach(function (b) { b.classList.remove('sel'); });
               btn.classList.add('sel');
-              _mi=i;_mt=iconKey;if(!isTotp())sendCode();
-              $('otpDesc').textContent='已选择「'+m+'」，验证码将发送到您的设备';
+              _mi = i; _mt = iconKey;
+              if (isTotp()) {
+                $('otpDesc').textContent = '已选择「' + m + '」，请输入动态口令';
+              } else {
+                $('otpDesc').textContent = '已选择「' + m + '」，正在发送验证码…';
+                sendCode();
+              }
               $('otpCode').focus();
             };
             $('otpM').appendChild(btn);
           });
-          // 如果只有一种方式，自动选中
-          if(d.methods.length===1){
-            $('otpM').querySelector('.otp-method').click();
+          if (d.methods.length === 1) {
+            var b = $('otpM').querySelector('.otp-method');
+            if (b) b.click();
           }
         }
-      }else if(d.state==='logging_in'){
-        $('st').className='st loading';
-        $('st').innerHTML='<span class="spin"></span> 登录中…';
+      } else if (d.state === 'logging_in') {
+        $('st').className = 'st loading';
+        $('st').innerHTML = '<span class="spin"></span> 登录中…';
       }
-    }).catch(function(){});
-  },500);
+    }).catch(function () {});
+  }, 500);
 }
 
-$('f').onsubmit=function(e){
+$('f').onsubmit = function (e) {
   e.preventDefault();
-  var uid=$('uid').value.trim(),pwd=$('pwd').value;
-  if(!uid||!pwd)return;
-  $('btn').disabled=true;
-  $('btn').textContent='登录中…';
-  $('st').className='st loading';
-  $('st').innerHTML='<span class="spin"></span> 正在连接认证服务…';
+  var uid = $('uid').value.trim(), pwd = $('pwd').value;
+  if (!uid || !pwd) return;
+  $('btn').disabled = true;
+  $('btn').textContent = '登录中…';
+  $('st').className = 'st loading';
+  $('st').innerHTML = '<span class="spin"></span> 正在连接认证服务…';
   $('log').classList.add('on');
-  $('log').innerHTML='';
+  $('log').innerHTML = '';
   $('otp').classList.remove('on');
-  _mi=-1;$('otpCode').value='';
+  _mi = -1; $('otpCode').value = '';
 
-  fetch('/api/login',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({userId:uid,password:pwd})
-  }).then(function(r){return r.json()}).then(function(){
+  fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: uid, password: pwd })
+  }).then(function (r) { return r.json(); }).then(function () {
     poll();
-  }).catch(function(){
-    $('st').className='st err';
-    $('st').textContent='❌ 网络错误，请检查本地服务器是否运行';
-    $('btn').disabled=false;
-    $('btn').textContent='🔐 登录清华账号';
+  }).catch(function () {
+    $('st').className = 'st err';
+    $('st').textContent = '❌ 网络错误，请检查本地服务器是否运行';
+    $('btn').disabled = false;
+    $('btn').textContent = '🔐 登录清华账号';
   });
   return false;
 };
 
-$('otpBtn').onclick=function(){
-  if(_mi<0){$('st').className='st err';$('st').textContent='⚠️ 请先选择验证方式';return}
-  var code=$('otpCode').value.trim();
-  if(!code){$('st').className='st err';$('st').textContent='⚠️ 请输入验证码';return}
-  $('st').className='st loading';
-  $('st').innerHTML='<span class="spin"></span> 验证中…';
-  $('otpBtn').disabled=true;
+$('otpBtn').onclick = function () {
+  if (_mi < 0) { $('st').className = 'st err'; $('st').textContent = '⚠️ 请先选择验证方式'; return; }
+  var code = $('otpCode').value.trim();
+  if (!code) { $('st').className = 'st err'; $('st').textContent = '⚠️ 请输入验证码'; return; }
+  $('st').className = 'st loading';
+  $('st').innerHTML = '<span class="spin"></span> 验证中…';
+  $('otpBtn').disabled = true;
 
-  fetch('/api/2fa',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({methodIdx:_mi,code:code})
-  }).then(function(r){return r.json()}).then(function(){
+  fetch('/api/2fa', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ methodIdx: _mi, code: code })
+  }).then(function (r) { return r.json(); }).then(function () {
     $('otp').classList.remove('on');
-    $('otpBtn').disabled=false;
+    $('otpBtn').disabled = false;
     poll();
-  }).catch(function(){
-    $('st').className='st err';
-    $('st').textContent='❌ 验证请求失败';
-    $('otpBtn').disabled=false;
+  }).catch(function () {
+    $('st').className = 'st err';
+    $('st').textContent = '❌ 验证请求失败';
+    $('otpBtn').disabled = false;
   });
 };
 
-// 回车提交验证码
-$('otpCode').onkeydown=function(e){
-  if(e.key==='Enter')$('otpBtn').click();
+$('otpCode').onkeydown = function (e) {
+  if (e.key === 'Enter') $('otpBtn').click();
 };
 </script>
 </body>
