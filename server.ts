@@ -291,85 +291,50 @@ async function fetchTrainingPlan(s: Session, sem: string) {
   const html = await fetchGbk(s, zhjwxkUrl(s, `/jhBks.vjhBksPyfakcbBs.do?m=showBksZxZdxjxjhXmxqkclist&p_xnxq=${sem}`));
   return parsePlan(cheerio.load(html));
 }
-// 并发翻页通用函数
-async function fetchPaginated(s: Session, sem: string, path: string, parse: (html: string) => any[], batchSize = 10) {
+async function fetchCourseCatalog(s: Session, sem: string) {
   const all: any[] = [];
   const seen = new Set<string>();
-
-  // Page -1 first (index page, no page param) — this is page 0 in zhjwxk
-  try {
-    const html = await fetchGbk(s, zhjwxkUrl(s, `/${path}&p_xnxq=${sem}`));
-    const items = parse(html);
-    items.forEach((it: any) => { const k = (it.code || '') + '_' + (it.seq || it.kxh || '0'); if (!seen.has(k)) { seen.add(k); all.push(it); } });
-  } catch { return all; }
-
-  // Parallel batches — start from page 0 to match extension's pagination
-  for (let start = 0; start <= 200; start += batchSize) {
-    const batch = await Promise.all(
-      Array.from({ length: batchSize }, (_, i) => start + i).map(async p => {
-        try {
-          const html = await fetchGbk(s, zhjwxkUrl(s, `/${path}&p_xnxq=${sem}&page=${p}`));
-          return parse(html);
-        } catch { return []; }
-      })
-    );
-    let total = 0;
-    for (const items of batch) {
-      for (const it of items) {
-        const k = (it.code || '') + '_' + (it.seq || it.kxh || '0');
-        if (!seen.has(k)) { seen.add(k); all.push(it); total++; }
+  for (let p = -1; p <= 200; p++) {
+    const u = p === -1
+      ? zhjwxkUrl(s, `/xkBks.vxkBksJxjhBs.do?m=kkxxSearch&p_xnxq=${sem}`)
+      : zhjwxkUrl(s, `/xkBks.vxkBksJxjhBs.do?m=kkxxSearch&p_xnxq=${sem}&page=${p}`);
+    try {
+      const html = await fetchGbk(s, u);
+      const batch = parseCatalog(cheerio.load(html));
+      if (!batch.length && p >= 0) break;
+      for (const it of batch) {
+        const k = (it.code || '') + '_' + (it.seq || '0');
+        if (!seen.has(k)) { seen.add(k); all.push(it); }
       }
-    }
-    if (total === 0) break; // empty batch → reached end
+    } catch { break; }
   }
-  console.log(`  [fetchPaginated] total (deduped): ${all.length}`);
+  console.log(`  [catalog] total (deduped): ${all.length}`);
   return all;
-}
-
-async function fetchCourseCatalog(s: Session, sem: string) {
-  return fetchPaginated(s, sem, "xkBks.vxkBksJxjhBs.do?m=kkxxSearch", html => parseCatalog(cheerio.load(html)));
 }
 
 async function fetchVolunteer(s: Session, sem: string) {
   const allMap: Record<string, any> = {};
   // Regular volunteer
-  try {
-    const base = "xkBks.xkBksZytjb.do?m=tbzySearchBR";
-    const firstHtml = await fetchGbk(s, zhjwxkUrl(s, `/${base}&p_xnxq=${sem}`));
-    Object.assign(allMap, parseVolFromHtml(firstHtml));
-    for (let start = 0; start <= 200; start += 10) {
-      const batch = await Promise.all(
-        Array.from({ length: 10 }, (_, i) => start + i).map(async p => {
-          try {
-            const html = await fetchGbk(s, zhjwxkUrl(s, `/${base}&p_xnxq=${sem}&page=${p}`));
-            return parseVolFromHtml(html);
-          } catch { return {}; }
-        })
-      );
-      let total = 0;
-      for (const items of batch) { Object.assign(allMap, items); total += Object.keys(items).length; }
-      if (total === 0) break;
-    }
-  } catch { /* ignore */ }
-
+  for (let p = -1; p <= 200; p++) {
+    const u = p === -1
+      ? zhjwxkUrl(s, `/xkBks.xkBksZytjb.do?m=tbzySearchBR&p_xnxq=${sem}`)
+      : zhjwxkUrl(s, `/xkBks.xkBksZytjb.do?m=tbzySearchBR&p_xnxq=${sem}&page=${p}`);
+    const html = await fetchGbk(s, u);
+    const batch = parseVolFromHtml(html);
+    if (!Object.keys(batch).length && p >= 0) break;
+    Object.assign(allMap, batch);
+  }
   // Sports volunteer
   try {
-    const sportsBase = "xkBks.xkBksZytjb.do?m=tbzySearchTy";
-    const firstSports = await fetchGbk(s, zhjwxkUrl(s, `/${sportsBase}&p_xnxq=${sem}`));
     const sportsMap: Record<string, any> = {};
-    Object.assign(sportsMap, parseVolSportsFromHtml(firstSports));
-    for (let start = 1; start <= 20; start += 10) {
-      const batch = await Promise.all(
-        Array.from({ length: 10 }, (_, i) => start + i).map(async p => {
-          try {
-            const html = await fetchGbk(s, zhjwxkUrl(s, `/${sportsBase}&p_xnxq=${sem}&page=${p}`));
-            return parseVolSportsFromHtml(html);
-          } catch { return {}; }
-        })
-      );
-      let total = 0;
-      for (const items of batch) { Object.assign(sportsMap, items); total += Object.keys(items).length; }
-      if (total === 0) break;
+    for (let p = -1; p <= 20; p++) {
+      const u = p === -1
+        ? zhjwxkUrl(s, `/xkBks.xkBksZytjb.do?m=tbzySearchTy&p_xnxq=${sem}`)
+        : zhjwxkUrl(s, `/xkBks.xkBksZytjb.do?m=tbzySearchTy&p_xnxq=${sem}&page=${p}`);
+      const html = await fetchGbk(s, u);
+      const batch = parseVolSportsFromHtml(html);
+      if (!Object.keys(batch).length && p >= 0) break;
+      Object.assign(sportsMap, batch);
     }
     for (const [key, val] of Object.entries(sportsMap)) { if (allMap[key]) Object.assign(allMap[key], val); else allMap[key] = val; }
   } catch { /* ignore */ }
@@ -411,37 +376,25 @@ async function fetchQueueData(s: Session, sem: string) {
   const tokenMatch = /name="token"\s+value="([^"]+)"/.exec(firstHtml);
   const token = tokenMatch ? tokenMatch[1] : "";
   if (token) {
-    for (let start = 0; start <= 200; start += 10) {
-      const batch = await Promise.all(
-        Array.from({ length: 10 }, (_, i) => start + i).map(async p => {
-          const form = new URLSearchParams({ m: "kylSearch", page: String(p), token, "p_sort.p1": "", "p_sort.p2": "", "p_sort.asc1": "", "p_sort.asc2": "", p_xnxq: sem, pathContent: "" });
-          try {
-            const html = await postFormGbk(s, zhjwxkUrl(s, "/xkBks.vxkBksJxjhBs.do"), Object.fromEntries(form.entries()));
-            if (!html.includes("gridData")) return [];
-            const pgRe = /\[\s*"(\d+)"\s*,\s*"([^"]*?)"\s*,\s*"[^"]*?"\s*,\s*"(\d*)"\s*,\s*"(\d*)"\s*,\s*"[^"]*?"\s*,\s*"[^"]*?"\s*\]/g;
-            const items: any[] = []; let pm;
-            while ((pm = pgRe.exec(html)) !== null) items.push({ k: pm[1] + "_" + pm[2], code: pm[1], seq: pm[2], qCapacity: parseInt(pm[3]) || 0, qRemaining: parseInt(pm[4]) || 0, qQueue: 0 });
-            return items;
-          } catch { return []; }
-        })
-      );
-      let total = 0;
-      for (const items of batch) { for (const it of items) { if (!map[it.k]) map[it.k] = { code: it.code, seq: it.seq, qCapacity: it.qCapacity, qRemaining: it.qRemaining, qQueue: 0 }; total++; } }
-      if (total === 0) break;
+    for (let p = 0; p <= 200; p++) {
+      const form = new URLSearchParams({ m: "kylSearch", page: String(p), token, "p_sort.p1": "", "p_sort.p2": "", "p_sort.asc1": "", "p_sort.asc2": "", p_xnxq: sem, pathContent: "" });
+      try {
+        const html = await postFormGbk(s, zhjwxkUrl(s, "/xkBks.vxkBksJxjhBs.do"), Object.fromEntries(form.entries()));
+        if (!html.includes("gridData")) break;
+        const pgRe = /\[\s*"(\d+)"\s*,\s*"([^"]*?)"\s*,\s*"[^"]*?"\s*,\s*"(\d*)"\s*,\s*"(\d*)"\s*,\s*"[^"]*?"\s*,\s*"[^"]*?"\s*\]/g;
+        let pm; let cnt = 0;
+        while ((pm = pgRe.exec(html)) !== null) { const k = pm[1] + "_" + pm[2]; if (!map[k]) map[k] = { code: pm[1], seq: pm[2], qCapacity: parseInt(pm[3]) || 0, qRemaining: parseInt(pm[4]) || 0, qQueue: 0 }; cnt++; }
+        if (!cnt) break;
+      } catch { break; }
     }
   }
   const parts = Object.values(map).map((q: any) => sem + "_" + q.code + "_" + q.seq);
-  for (let i = 0; i < parts.length; i += 500) {
-    const batch = parts.slice(i, i + 500);
-    const subBatches: string[][] = [];
-    for (let j = 0; j < batch.length; j += 100) subBatches.push(batch.slice(j, j + 100));
-    await Promise.all(subBatches.map(async sub => {
-      try {
-        const qHtml = await fetchGbk(s, zhjwxkUrl(s, `/xkBks.vxkBksXkbBs.do?m=selectBksDlCount&kc_message=${encodeURIComponent(sub.join(";"))}`));
-        const qData = JSON.parse(qHtml);
-        if (Array.isArray(qData)) qData.forEach((obj: any) => { const k = obj.kch + "_" + obj.kxh; if (map[k]) map[k].qQueue = parseInt(obj.dlrs) || 0; });
-      } catch { /* ignore */ }
-    }));
+  for (let i = 0; i < parts.length; i += 100) {
+    try {
+      const qHtml = await fetchGbk(s, zhjwxkUrl(s, `/xkBks.vxkBksXkbBs.do?m=selectBksDlCount&kc_message=${encodeURIComponent(parts.slice(i, i + 100).join(";"))}`));
+      const qData = JSON.parse(qHtml);
+      if (Array.isArray(qData)) qData.forEach((obj: any) => { const k = obj.kch + "_" + obj.kxh; if (map[k]) map[k].qQueue = parseInt(obj.dlrs) || 0; });
+    } catch { /* ignore */ }
   }
   return { map, phase: !!Object.keys(map).length };
 }
