@@ -180,13 +180,27 @@ async function postFormGbk(s: Session, urlStr: string, form: Record<string, stri
   return iconv.decode(Buffer.from(await r.arrayBuffer()), "gbk");
 }
 
+// ── Retry helper (WebVPN rate limits occasionally) ──
+async function retry<T>(fn: () => Promise<T>, label: string, maxRetries = 3, baseDelay = 2000): Promise<T> {
+  for (let i = 0; i < maxRetries; i++) {
+    try { return await fn(); } catch (e: any) {
+      if (i < maxRetries - 1) {
+        const delay = baseDelay * (i + 1);
+        console.log(`  [retry] ${label} 失败: ${e.message}, ${delay}ms 后重试 (${i+1}/${maxRetries-1})...`);
+        await new Promise(r => setTimeout(r, delay));
+      } else throw e;
+    }
+  }
+  throw new Error("unreachable");
+}
+
 // ═══════════════ Login flow (session-scoped) ═══════════════
 async function doLogin(s: Session, userId: string, password: string) {
   s.loginState = "logging_in"; s.loginError = ""; s.loginProgress = []; s.pending2FA = null;
   s.storedUserId = userId; s.storedPassword = password;
   try {
     sLog(s, "连接 webvpn...");
-    const lpHtml = await fetchAuto(s, "https://webvpn.tsinghua.edu.cn/login?oauth_login=true");
+    const lpHtml = await retry(() => fetchAuto(s, "https://webvpn.tsinghua.edu.cn/login?oauth_login=true"), "fetch OAuth page");
     const sm2Key1 = cheerio.load(lpHtml)("#sm2publicKey").text();
     if (!sm2Key1) throw new Error("无法获取 SM2 key");
     sLog(s, "CAS 认证中...");
@@ -237,7 +251,7 @@ async function finishLogin(s: Session, loginResp: string) {
   const sm2Key2 = cheerio.load(xkHtml)("#sm2publicKey").text();
   if (!sm2Key2) throw new Error(`无法获取选课系统 SM2 key (finalUrl=${finalUrl})`);
   sLog(s, "选课系统 CAS 认证...");
-  let cr = await postForm(s, ID_LOGIN, { i_user: s.storedUserId, i_pass: "04" + sm2.doEncrypt(s.storedPassword, sm2Key2), fingerPrint: s.finger, fingerGenPrint: "", i_captcha: "" });
+  let cr = await retry(() => postForm(s, ID_LOGIN, { i_user: s.storedUserId, i_pass: "04" + sm2.doEncrypt(s.storedPassword, sm2Key2), fingerPrint: s.finger, fingerGenPrint: "", i_captcha: "" }), "zhjwxk CAS login");
   if (cr.includes("二次认证")) { await handle2FAResponse(s); return; }
   if (!cr.includes("登录成功")) throw new Error("选课系统 CAS 登录失败");
   sLog(s, "✅ 选课系统登录成功!");
