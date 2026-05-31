@@ -108,8 +108,8 @@ function saveState(res: http.ServerResponse, s: Session) {
   res.setHeader("Set-Cookie", `${COOKIE_NAME}=${val}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL}`);
 }
 
-// ── In-memory server cache (catalog/volunteer 数据太大不能放 cookie，改存内存) ──
-const memoryCaches = new Map<string, { sem: string; plan: any[]; catalog: any[]; volunteer: Record<string, any>; ts: number }>();
+// ── Global cache (cross-session): catalog/volunteer 首次爬完后所有用户复用 ──
+let globalCache: { sem: string; plan: any[]; catalog: any[]; volunteer: Record<string, any>; ts: number } | null = null;
 
 // ═══════════════ HTTP helpers (session-scoped) ═══════════════
 function ch(s: Session) { return Object.entries(s.cookies).map(([k, v]) => `${k}=${v}`).join("; "); }
@@ -560,7 +560,6 @@ const server = http.createServer(async (req, res) => {
   if (pathname === "/api/2fa" && req.method === "POST") { const b = JSON.parse(await readBody(req)); await continue2FA(s, b.methodIdx, b.code); json(res, s, { ok: true }); return; }
   if (pathname === "/api/status") { json(res, s, { state: s.loginState, error: s.loginError, progress: s.loginProgress, need2fa: s.loginState === "need_2fa", methods: s.pending2FA?.methods || [] }); return; }
   if (pathname === "/api/logout" && req.method === "POST") {
-    memoryCaches.delete(s.id);
     res.setHeader("Set-Cookie", `${COOKIE_NAME}=; Path=/; Max-Age=0`);
     json(res, s, { ok: true }); return;
   }
@@ -575,17 +574,21 @@ const server = http.createServer(async (req, res) => {
         let plan: any[], catalog: any[], volData: Record<string, any>;
         let selected: any[], candidates: any[];
         let qResult: any;
-        const cached = memoryCaches.get(s.id);
-        if (!forceRefresh && cached && cached.sem === sem && cached.catalog.length > 0) {
-          console.log(`  [init] 内存缓存命中 (catalog=${cached.catalog.length})，仅拉取用户数据...`);
-          plan = cached.plan; catalog = cached.catalog; volData = cached.volunteer;
+
+        // ── Global cache logic ──
+        // plan/catalog/volunteer are shared across all sessions (slow, ~4000 courses)
+        // selected/queue/candidates are per-user and always fetched fresh
+        if (!forceRefresh && globalCache && globalCache.sem === sem && globalCache.catalog.length > 0) {
+          const age = Math.round((Date.now() - globalCache.ts) / 60000);
+          console.log(`  [init] 全局缓存命中 (catalog=${globalCache.catalog.length}, age=${age}m)，仅拉取用户数据...`);
+          plan = globalCache.plan; catalog = globalCache.catalog; volData = globalCache.volunteer;
           [selected, qResult, candidates] = await Promise.all([
             fetchSelectedCourses(s, sem).catch(e => { console.log(`  [init] selected FAIL: ${e.message}`); return []; }),
             fetchQueueData(s, sem).catch(e => { console.log(`  [init] queue FAIL: ${e.message}`); return { map: {}, phase: false }; }),
             fetchCandidateCourses(s, sem).catch(e => { console.log(`  [init] candidates FAIL: ${e.message}`); return []; }),
           ]);
         } else {
-          console.log(`  [init] 拉取全部数据 (6路并发)...`);
+          console.log(`  [init] 拉取全部数据...`);
           const results = await Promise.all([
             fetchTrainingPlan(s, sem).catch(e => { console.log(`  [init] plan FAIL: ${e.message}`); return []; }),
             fetchCourseCatalog(s, sem).catch(e => { console.log(`  [init] catalog FAIL: ${e.message}`); return []; }),
@@ -598,14 +601,14 @@ const server = http.createServer(async (req, res) => {
           selected = results[3] as any[];
           qResult = results[4] as any;
           candidates = results[5] as any[];
-          memoryCaches.set(s.id, { sem, plan, catalog, volunteer: volData, ts: Date.now() });
+          globalCache = { sem, plan, catalog, volunteer: volData, ts: Date.now() };
         }
         console.log(`  [init] plan=${plan.length} catalog=${catalog.length} volData=${Object.keys(volData).length} selected=${selected.length} queue=${Object.keys(qResult.map).length} candidates=${candidates.length}`);
         json(res, s, { plan, catalog, volunteer: volData, selected, queueMap: qResult.map, queuePhase: qResult.phase, candidates }); return;
       }
       if (pathname === "/api/plan") { json(res, s, await fetchTrainingPlan(s, sem)); return; }
-      if (pathname === "/api/courses") { const c = memoryCaches.get(s.id); json(res, s, c && c.sem === sem ? c.catalog : await fetchCourseCatalog(s, sem)); return; }
-      if (pathname === "/api/volunteer") { const c = memoryCaches.get(s.id); json(res, s, c && c.sem === sem ? c.volunteer : await fetchVolunteer(s, sem)); return; }
+      if (pathname === "/api/courses") { json(res, s, globalCache && globalCache.sem === sem ? globalCache.catalog : await fetchCourseCatalog(s, sem)); return; }
+      if (pathname === "/api/volunteer") { json(res, s, globalCache && globalCache.sem === sem ? globalCache.volunteer : await fetchVolunteer(s, sem)); return; }
       if (pathname === "/api/selected") { json(res, s, await fetchSelectedCourses(s, sem)); return; }
       if (pathname === "/api/queue") { json(res, s, await fetchQueueData(s, sem)); return; }
       if (pathname === "/api/candidates") { json(res, s, await fetchCandidateCourses(s, sem)); return; }
