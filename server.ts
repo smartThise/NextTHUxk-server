@@ -199,9 +199,17 @@ async function doLogin(s: Session, userId: string, password: string) {
   s.loginState = "logging_in"; s.loginError = ""; s.loginProgress = []; s.pending2FA = null;
   s.storedUserId = userId; s.storedPassword = password;
   try {
-    sLog(s, "连接 webvpn...");
-    const lpHtml = await retry(() => fetchAuto(s, "https://webvpn.tsinghua.edu.cn/login?oauth_login=true"), "fetch OAuth page");
-    const sm2Key1 = cheerio.load(lpHtml)("#sm2publicKey").text();
+    let sm2Key1: string;
+    // Try WebVPN OAuth first, fallback to direct WebVPN login (bypasses oauth.tsinghua.edu.cn)
+    try {
+      sLog(s, "连接 webvpn (OAuth)...");
+      const lpHtml = await retry(() => fetchAuto(s, "https://webvpn.tsinghua.edu.cn/login?oauth_login=true"), "OAuth page");
+      sm2Key1 = cheerio.load(lpHtml)("#sm2publicKey").text();
+    } catch (e: any) {
+      sLog(s, `OAuth 不可用: ${e.message}，改用 WebVPN 直连登录...`);
+      const lpHtml = await fetchAuto(s, "https://webvpn.tsinghua.edu.cn/login");
+      sm2Key1 = cheerio.load(lpHtml)("#sm2publicKey").text();
+    }
     if (!sm2Key1) throw new Error("无法获取 SM2 key");
     sLog(s, "CAS 认证中...");
     const loginResp = await postForm(s, ID_LOGIN, { i_user: userId, i_pass: "04" + sm2.doEncrypt(password, sm2Key1), fingerPrint: s.finger, fingerGenPrint: "", i_captcha: "" });
