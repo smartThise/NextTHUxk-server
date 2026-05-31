@@ -342,21 +342,21 @@ NX.refreshSelected = async function () {
   var state = NX.state;
   var selected = await NX.fetchSelected(state.SEM);
   var selMap = {};
-  selected.forEach(function (s) { selMap[s.code + '_' + s.seq] = s; });
+  selected.forEach(function (s) { selMap[s.code + '_' + (s.seq || '0')] = s; });
   var zyCache = (await NX.store.get('zyCache')) || {};
   var cacheUpdated = await NX.resolveCourseZy(state.allCourses, selMap, zyCache);
   if (cacheUpdated) await NX.store.set('zyCache', zyCache);
   try {
     state.candidateCourses = await NX.fetchCandidates(state.SEM);
   } catch (e) { /* keep existing */ }
-  var candKeys = new Set(state.candidateCourses.map(function (c) { return c.code + '_' + c.seq; }));
+  var candKeys = new Set(state.candidateCourses.map(function (c) { return c.code + '_' + (c.seq || '0'); }));
   state.allCourses.forEach(function (c) {
     c.isCandidate = candKeys.has(c.code + '_' + (c.seq || '0'));
   });
   NX.filterCourses();
   NX.renderPreviewTT(
     state.allCourses.filter(function (c) { return c.selected; }).concat(
-      state.candidateCourses.filter(function (cc) { return !state.allCourses.some(function (ac) { return ac.selected && ac.code === cc.code; }); })
+      state.candidateCourses.filter(function (cc) { return !state.allCourses.some(function (ac) { return ac.selected && ac.code === cc.code && String(ac.seq || '0') === String(cc.seq || '0'); }); })
     ),
     '当前已选'
   );
