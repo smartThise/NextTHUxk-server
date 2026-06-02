@@ -300,7 +300,7 @@ async function fetchTrainingPlan(s: Session, sem: string) {
 async function fetchCourseCatalog(s: Session, sem: string) {
   const all: any[] = [];
   const seen = new Set<string>();
-  for (let p = -1; p <= 200; p++) {
+  for (let p = -1; p <= 300; p++) {
     const u = p === -1
       ? zhjwxkUrl(s, `/xkBks.vxkBksJxjhBs.do?m=kkxxSearch&p_xnxq=${sem}`)
       : zhjwxkUrl(s, `/xkBks.vxkBksJxjhBs.do?m=kkxxSearch&p_xnxq=${sem}&page=${p}`);
