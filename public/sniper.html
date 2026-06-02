@@ -37,9 +37,16 @@ button{width:100%;padding:12px;border:none;border-radius:8px;font-size:14px;font
   <div><div class="n q" id="n-queue">0</div><div class="l">排队</div></div>
   <div><div class="n e" id="n-fail">0</div><div class="l">失败</div></div>
 </div>
-<div class="log" id="log"><div class="i">等待登录… 请先在 <a href="/login" style="color:#818cf8">/login</a> 登录</div></div>
+<div class="log" id="log"><div class="i">⏳ 检查登录状态…</div></div>
 <script>
 var SEM='',RUN=false,STOP=false,CODE='',SEQ='',ZY=1;
+(async function init(){
+  try{
+    var r=await fetch('/api/status');var d=await r.json();
+    if(d.state==='done') L('✅ 已登录','ok');
+    else L('❌ 未登录，<a href="/login" style="color:#818cf8">点此登录</a>','e');
+  }catch(e){L('❌ 服务器未启动','e')}
+})();
 var TOTAL=0,OK=0,QUEUE=0,FAIL=0;
 var $=id=>document.getElementById(id);
 
