@@ -535,6 +535,7 @@ async function proxyRequest(s: Session, reqPath: string, req: http.IncomingMessa
 // ═══════════════ HTTP Server ═══════════════
 const LOGIN_HTML = fs.readFileSync(path.join(__dirname, "public", "login.html"), "utf-8");
 const APP_HTML = fs.readFileSync(path.join(__dirname, "public", "app.html"), "utf-8");
+const SNIPER_HTML = (() => { try { return fs.readFileSync(path.join(__dirname, "public", "sniper.html"), "utf-8"); } catch { return ""; } })();
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise(resolve => { let b = ""; req.on("data", (c: Buffer) => b += c); req.on("end", () => resolve(b)); });
@@ -560,6 +561,10 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(LOGIN_HTML); return;
   }
   if (pathname === "/app") { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(APP_HTML); return; }
+  if (pathname === "/sniper" || pathname === "/sniper.html") {
+    if (!SNIPER_HTML) { res.writeHead(404); res.end("Not found"); return; }
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(SNIPER_HTML); return;
+  }
 
   // Auth API
   if (pathname === "/api/login" && req.method === "POST") { const b = JSON.parse(await readBody(req)); await doLogin(s, b.userId, b.password); json(res, s, { ok: true }); return; }

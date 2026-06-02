@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>选课提交器</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;padding:16px;min-height:100vh}
+h1{font-size:18px;margin-bottom:12px;background:linear-gradient(135deg,#818cf8,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+label{display:block;font-size:11px;color:#94a3b8;margin-bottom:3px}
+input,select{width:100%;padding:10px;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#e2e8f0;font-size:14px;margin-bottom:8px;font-family:inherit}
+button{width:100%;padding:12px;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:6px}
+.go{background:linear-gradient(135deg,#818cf8,#6366f1);color:#fff}
+.go:disabled{opacity:.5}.stop{background:#ef4444;color:#fff}
+.r{display:flex;gap:8px}.r>div{flex:1}
+.log{font-family:monospace;font-size:11px;line-height:1.7;max-height:320px;overflow-y:auto;background:#1e293b;border-radius:8px;padding:10px;margin-top:8px}
+.log .ok{color:#4ade80}.log .q{color:#fbbf24}.log .e{color:#f87171}.log .i{color:#94a3b8}
+.cd{font-size:52px;font-weight:900;text-align:center;font-family:monospace;margin:12px 0}
+.cd.go{color:#4ade80}.cd.wait{color:#fbbf24}
+.s{display:flex;gap:8px;margin-top:8px}
+.s>div{flex:1;text-align:center;background:#1e293b;padding:10px;border-radius:8px}
+.s .n{font-size:24px;font-weight:900}.s .l{font-size:10px;color:#94a3b8}
+</style>
+</head>
+<body>
+<h1>⚡ 选课提交器</h1>
+<label>📋 课号</label><input id="code" placeholder="10720131">
+<div class="r"><div><label>课序号</label><input id="seq" value="1"></div><div><label>志愿</label><select id="zy"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div></div>
+<label>🎯 目标时间 (HH:MM)</label><input id="target" value="1:00">
+<button class="go" id="btn">🚀 开始</button>
+<button class="stop" id="btnStop" style="display:none">🛑 停止</button>
+<div class="cd wait" id="cd" style="display:none">--:--:--</div>
+<div class="s" id="stats" style="display:none">
+  <div><div class="n" id="n-total">0</div><div class="l">提交</div></div>
+  <div><div class="n ok" id="n-ok">0</div><div class="l">成功</div></div>
+  <div><div class="n q" id="n-queue">0</div><div class="l">排队</div></div>
+  <div><div class="n e" id="n-fail">0</div><div class="l">失败</div></div>
+</div>
+<div class="log" id="log"><div class="i">等待登录… 请先在 <a href="/login" style="color:#818cf8">/login</a> 登录</div></div>
+<script>
+var SEM='',RUN=false,STOP=false,CODE='',SEQ='',ZY=1;
+var TOTAL=0,OK=0,QUEUE=0,FAIL=0;
+var $=id=>document.getElementById(id);
+
+function L(m,c){var d=document.createElement('div');d.className=c||'i';d.textContent=new Date().toLocaleTimeString()+' '+m;$('log').appendChild(d);$('log').scrollTop=$('log').scrollHeight}
+function U(){for(var a of['n-total','n-ok','n-queue','n-fail'])$(a).textContent={TOTAL:0,OK:0,QUEUE:0,FAIL:0}[a.slice(2)]||eval(a.slice(2).toUpperCase())}
+
+async function fetchSem(){
+  var r=await fetch('/api/status');var d=await r.json();
+  if(d.state!=='done'){L('未登录，请先登录','e');return false}
+  // get sem from the current session somehow
+  try{
+    var r2=await fetch('/api/init?sem='+encodeURIComponent(new URLSearchParams(location.search).get('sem')||''));
+    var d2=await r2.json();
+    if(d2.error&&d2.error.includes('登录')){L('未登录','e');return false}
+    // extract sem from whatever we have
+  }catch(e){}
+  return true;
+}
+
+async function submitOne(){
+  var sem=SEM||new URLSearchParams(location.search).get('sem')||'';
+  if(!sem){L('需要学期参数 ?sem=2025-2026-2','e');STOP=true;return}
+  var t0=Date.now();
+  try{
+    var r=await fetch('/api/submit?sem='+sem,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:CODE,seq:SEQ,zy:ZY,flag:'bx'})});
+    var d=await r.json();
+    TOTAL++;
+    if(d.ok&&d.msg.includes('成功')){OK++;L('✅ 选课成功!','ok');STOP=true}
+    else if(d.ok&&d.msg.includes('队列')){QUEUE++;L('📋 '+d.msg,'q')}
+    else if(d.ok){QUEUE++;L('📋 已提交','q')}
+    else{FAIL++;L('❌ '+d.msg,'e');if(d.msg.includes('登录'))STOP=true}
+  }catch(e){FAIL++;TOTAL++;L('❌ 网络错误','e')}
+  U();
+  var elapsed=Date.now()-t0;
+  return Math.max(0,1800-elapsed);
+}
+
+async function main(){
+  CODE=$('code').value.trim();SEQ=$('seq').value.trim();ZY=parseInt($('zy').value);
+  if(!CODE){L('请输入课号','e');return}
+  SEM=(await (await fetch('/api/status')).json()).sem||'';
+  if(!SEM){var s=prompt('学期 (如 2025-2026-2):');if(!s)return;SEM=s}
+  // verify logged in
+  var r=await fetch('/api/status');var d=await r.json();
+  if(d.state!=='done'){L('请先在 /login 登录','e');return}
+
+  RUN=true;STOP=false;
+  $('btn').style.display='none';$('btnStop').style.display='';
+  $('stats').style.display='';$('cd').style.display='';
+  $('log').innerHTML='';
+  L('已就绪，课号='+CODE+' 课序='+SEQ+' 志愿='+ZY,'i');
+
+  // wait for target
+  var target=$('target').value.trim();
+  while(!STOP){
+    var now=new Date();
+    var [h,m]=target.split(':').map(Number);
+    var t=new Date(now.getFullYear(),now.getMonth(),now.getDate(),h,m,0);
+    if(t<now)t.setDate(t.getDate()+1);
+    var diff=t-now;
+    if(diff<=0)break;
+    var hh=Math.floor(diff/36e5),mm=Math.floor((diff%36e5)/6e4),ss=Math.floor((diff%6e4)/1e3);
+    $('cd').textContent=String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+    $('cd').className='cd wait';
+    await new Promise(r=>setTimeout(r,200));
+  }
+  if(STOP)return;
+  $('cd').className='cd go';$('cd').textContent='🔥 提交中';
+
+  L('开始高频提交 (每2s)','ok');
+  while(!STOP){
+    var w=await submitOne();
+    if(STOP)break;
+    await new Promise(r=>setTimeout(r,w));
+  }
+  L('已停止','i');
+  RUN=false;
+  $('btn').style.display='';$('btnStop').style.display='none';
+}
+
+$('btn').onclick=main;
+$('btnStop').onclick=function(){STOP=true;if(!RUN){$('btn').style.display='';$('btnStop').style.display='none';$('cd').textContent='已停止';$('cd').className='cd wait'}};
+</script>
+</body>
+</html>
