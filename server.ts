@@ -180,36 +180,14 @@ async function postFormGbk(s: Session, urlStr: string, form: Record<string, stri
   return iconv.decode(Buffer.from(await r.arrayBuffer()), "gbk");
 }
 
-// ── Retry helper (WebVPN rate limits occasionally) ──
-async function retry<T>(fn: () => Promise<T>, label: string, maxRetries = 3, baseDelay = 2000): Promise<T> {
-  for (let i = 0; i < maxRetries; i++) {
-    try { return await fn(); } catch (e: any) {
-      if (i < maxRetries - 1) {
-        const delay = baseDelay * (i + 1);
-        console.log(`  [retry] ${label} 失败: ${e.message}, ${delay}ms 后重试 (${i+1}/${maxRetries-1})...`);
-        await new Promise(r => setTimeout(r, delay));
-      } else throw e;
-    }
-  }
-  throw new Error("unreachable");
-}
-
 // ═══════════════ Login flow (session-scoped) ═══════════════
 async function doLogin(s: Session, userId: string, password: string) {
   s.loginState = "logging_in"; s.loginError = ""; s.loginProgress = []; s.pending2FA = null;
   s.storedUserId = userId; s.storedPassword = password;
   try {
-    let sm2Key1: string;
-    // Try WebVPN OAuth first, fallback to direct WebVPN login (bypasses oauth.tsinghua.edu.cn)
-    try {
-      sLog(s, "连接 webvpn (OAuth)...");
-      const lpHtml = await retry(() => fetchAuto(s, "https://webvpn.tsinghua.edu.cn/login?oauth_login=true"), "OAuth page");
-      sm2Key1 = cheerio.load(lpHtml)("#sm2publicKey").text();
-    } catch (e: any) {
-      sLog(s, `OAuth 不可用: ${e.message}，改用 WebVPN 直连登录...`);
-      const lpHtml = await fetchAuto(s, "https://webvpn.tsinghua.edu.cn/login");
-      sm2Key1 = cheerio.load(lpHtml)("#sm2publicKey").text();
-    }
+    sLog(s, "连接 webvpn...");
+    const lpHtml = await fetchAuto(s, "https://webvpn.tsinghua.edu.cn/login?oauth_login=true");
+    const sm2Key1 = cheerio.load(lpHtml)("#sm2publicKey").text();
     if (!sm2Key1) throw new Error("无法获取 SM2 key");
     sLog(s, "CAS 认证中...");
     const loginResp = await postForm(s, ID_LOGIN, { i_user: userId, i_pass: "04" + sm2.doEncrypt(password, sm2Key1), fingerPrint: s.finger, fingerGenPrint: "", i_captcha: "" });
@@ -259,7 +237,7 @@ async function finishLogin(s: Session, loginResp: string) {
   const sm2Key2 = cheerio.load(xkHtml)("#sm2publicKey").text();
   if (!sm2Key2) throw new Error(`无法获取选课系统 SM2 key (finalUrl=${finalUrl})`);
   sLog(s, "选课系统 CAS 认证...");
-  let cr = await retry(() => postForm(s, ID_LOGIN, { i_user: s.storedUserId, i_pass: "04" + sm2.doEncrypt(s.storedPassword, sm2Key2), fingerPrint: s.finger, fingerGenPrint: "", i_captcha: "" }), "zhjwxk CAS login");
+  let cr = await postForm(s, ID_LOGIN, { i_user: s.storedUserId, i_pass: "04" + sm2.doEncrypt(s.storedPassword, sm2Key2), fingerPrint: s.finger, fingerGenPrint: "", i_captcha: "" });
   if (cr.includes("二次认证")) { await handle2FAResponse(s); return; }
   if (!cr.includes("登录成功")) throw new Error("选课系统 CAS 登录失败");
   sLog(s, "✅ 选课系统登录成功!");
@@ -584,11 +562,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === "/app") { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(APP_HTML); return; }
 
   // Auth API
-  if (pathname === "/api/login" && req.method === "POST") {
-    if (s.loginState === "done") { json(res, s, { ok: true }); return; }
-    if (s.loginState === "logging_in" || s.loginState === "need_2fa") { json(res, s, { ok: true }); return; }
-    const b = JSON.parse(await readBody(req)); await doLogin(s, b.userId, b.password); json(res, s, { ok: true }); return;
-  }
+  if (pathname === "/api/login" && req.method === "POST") { const b = JSON.parse(await readBody(req)); await doLogin(s, b.userId, b.password); json(res, s, { ok: true }); return; }
   if (pathname === "/api/2fa/send" && req.method === "POST") { const b = JSON.parse(await readBody(req)); await send2FACode(s, b.methodIdx); json(res, s, { ok: true }); return; }
   if (pathname === "/api/2fa" && req.method === "POST") { const b = JSON.parse(await readBody(req)); await continue2FA(s, b.methodIdx, b.code); json(res, s, { ok: true }); return; }
   if (pathname === "/api/status") { json(res, s, { state: s.loginState, error: s.loginError, progress: s.loginProgress, need2fa: s.loginState === "need_2fa", methods: s.pending2FA?.methods || [] }); return; }
