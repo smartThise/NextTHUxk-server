@@ -26,7 +26,7 @@ button{width:100%;padding:12px;border:none;border-radius:8px;font-size:14px;font
 <h1>⚡ 选课提交器</h1>
 <label>📋 课号</label><input id="code" placeholder="10720131">
 <div class="r"><div><label>课序号</label><input id="seq" value="1"></div><div><label>志愿</label><select id="zy"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div></div>
-<label>🎯 目标时间 (HH:MM)</label><input id="target" value="1:00">
+<label>🎯 目标时间 (24h制 HH:MM)</label><input id="target" value="13:00">
 <button class="go" id="btn">🚀 开始</button>
 <button class="stop" id="btnStop" style="display:none">🛑 停止</button>
 <div class="cd wait" id="cd" style="display:none">--:--:--</div>
@@ -79,11 +79,12 @@ async function submitOne(){
 async function main(){
   CODE=$('code').value.trim();SEQ=$('seq').value.trim();ZY=parseInt($('zy').value);
   if(!CODE){L('请输入课号','e');return}
-  SEM=(await (await fetch('/api/status')).json()).sem||'';
-  if(!SEM){var s=prompt('学期 (如 2025-2026-2):');if(!s)return;SEM=s}
-  // verify logged in
+  // check login + get sem
   var r=await fetch('/api/status');var d=await r.json();
-  if(d.state!=='done'){L('请先在 /login 登录','e');return}
+  if(d.state!=='done'){L('未登录，请打开 /login 登录后回来','e');return}
+  SEM=new URLSearchParams(location.search).get('sem')||'';
+  if(!SEM){SEM=prompt('学期 (如 2025-2026-3):');if(!SEM)return}
+  L('已登录 ✅ 学期='+SEM,'ok');
 
   RUN=true;STOP=false;
   $('btn').style.display='none';$('btnStop').style.display='';
