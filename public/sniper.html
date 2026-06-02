@@ -24,6 +24,7 @@ button{width:100%;padding:12px;border:none;border-radius:8px;font-size:14px;font
 </head>
 <body>
 <h1>⚡ 选课提交器</h1>
+<label>📅 学期</label><input id="sem" value="2025-2026-3" placeholder="2025-2026-3">
 <label>📋 课号</label><input id="code" placeholder="10720131">
 <div class="r"><div><label>课序号</label><input id="seq" value="1"></div><div><label>志愿</label><select id="zy"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div></div>
 <label>🎯 目标时间 (24h制 HH:MM)</label><input id="target" value="13:00">
@@ -82,8 +83,8 @@ async function main(){
   // check login + get sem
   var r=await fetch('/api/status');var d=await r.json();
   if(d.state!=='done'){L('未登录，请打开 /login 登录后回来','e');return}
-  SEM=new URLSearchParams(location.search).get('sem')||'';
-  if(!SEM){SEM=prompt('学期 (如 2025-2026-3):');if(!SEM)return}
+  SEM=$('sem').value.trim()||(new URLSearchParams(location.search).get('sem')||'');
+  if(!SEM){L('请输入学期','e');return}
   L('已登录 ✅ 学期='+SEM,'ok');
 
   RUN=true;STOP=false;
